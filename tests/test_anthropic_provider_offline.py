@@ -60,6 +60,7 @@ def call_text_with_error(monkeypatch, sdk_error):
     usage_logs = []
     monkeypatch.setattr(anthropic_provider, "Anthropic", lambda **kwargs: client)
     monkeypatch.setattr(anthropic_provider, "log_usage", usage_logs.append)
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "0")
 
     with pytest.raises(ProviderError) as captured:
         anthropic_provider.ask_anthropic("Hello")
@@ -222,6 +223,7 @@ def test_document_call_uses_the_same_anthropic_error_normalization(monkeypatch):
         messages=SimpleNamespace(create=raise_error),
     )
     monkeypatch.setattr(anthropic_provider, "Anthropic", lambda **kwargs: client)
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "0")
 
     with pytest.raises(ProviderTimeoutError) as captured:
         anthropic_provider.ask_anthropic_document(

@@ -16,7 +16,12 @@ from openai import (
     RateLimitError,
 )
 
-from ai_engine.config import get_provider_timeout_seconds
+from ai_engine.config import (
+    get_provider_max_retries,
+    get_provider_retry_base_delay_seconds,
+    get_provider_retry_max_delay_seconds,
+    get_provider_timeout_seconds,
+)
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
 from ai_engine.usage import (
@@ -32,6 +37,7 @@ from .errors import (
     ProviderTimeoutError,
     parse_retry_after_seconds,
 )
+from .retry import retry_provider_call
 
 
 ResultT = TypeVar("ResultT")
@@ -119,10 +125,18 @@ def _normalize_openai_error(exc: OpenAIError) -> ProviderError:
 
 
 def _call_openai(operation: Callable[[], ResultT]) -> ResultT:
-    try:
-        return operation()
-    except OpenAIError as exc:
-        raise _normalize_openai_error(exc) from exc
+    def call_once() -> ResultT:
+        try:
+            return operation()
+        except OpenAIError as exc:
+            raise _normalize_openai_error(exc) from exc
+
+    return retry_provider_call(
+        call_once,
+        max_retries=get_provider_max_retries(),
+        base_delay_seconds=get_provider_retry_base_delay_seconds(),
+        max_delay_seconds=get_provider_retry_max_delay_seconds(),
+    )
 
 
 def ask_openai(prompt: str) -> str:

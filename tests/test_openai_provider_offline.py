@@ -94,6 +94,7 @@ def call_text_with_error(monkeypatch, sdk_error):
     usage_logs = []
     monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: client)
     monkeypatch.setattr(openai_provider, "log_usage", usage_logs.append)
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "0")
 
     with pytest.raises(ProviderError) as captured:
         openai_provider.ask_openai("Hello")
@@ -242,6 +243,7 @@ def test_document_call_uses_the_same_openai_error_normalization(monkeypatch):
         responses=SimpleNamespace(create=raise_error),
     )
     monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: client)
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "0")
 
     with pytest.raises(ProviderTimeoutError) as captured:
         openai_provider.ask_openai_document(
