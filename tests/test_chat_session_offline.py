@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_engine import ProviderRateLimitError
+
 from ai_engine.models import DocumentContent
 from ai_engine.results import OutputRequest, StructuredResult
 from ai_engine.session import ConversationMessage, ConversationSession
@@ -284,13 +286,27 @@ def test_chat_adds_current_turn_only_after_successful_workflow(monkeypatch):
     ]
 
 
-def test_chat_does_not_add_current_message_when_workflow_raises(monkeypatch):
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("workflow failed"),
+        ProviderRateLimitError(
+            provider="gemini",
+            message="opaque",
+            retryable=False,
+        ),
+    ],
+)
+def test_chat_does_not_add_current_message_when_workflow_raises(
+    failure,
+    monkeypatch,
+):
     session = make_session()
     session.add_user_message("Existing")
     original_messages = list(session.messages)
 
     def failing_workflow(**kwargs):
-        raise RuntimeError("workflow failed")
+        raise failure
 
     monkeypatch.setattr(
         chat_module,
@@ -298,9 +314,10 @@ def test_chat_does_not_add_current_message_when_workflow_raises(monkeypatch):
         failing_workflow,
     )
 
-    with pytest.raises(RuntimeError, match="workflow failed"):
+    with pytest.raises(type(failure)) as captured:
         chat_module.chat(session, "Current")
 
+    assert captured.value is failure
     assert session.messages == original_messages
 
 

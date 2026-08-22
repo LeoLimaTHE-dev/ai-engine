@@ -6,6 +6,11 @@ import ai_engine
 from ai_engine import (
     OperationalPaths,
     PreflightReport,
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderRequestError,
+    ProviderTimeoutError,
     StructuredResult,
     analyze_documents,
     build_summary_prompt,
@@ -30,6 +35,13 @@ from ai_engine.limits import (
 )
 from ai_engine.paths import OperationalPaths as paths_operational_paths
 from ai_engine.paths import get_paths as paths_get_paths
+from ai_engine.providers.errors import (
+    ProviderConnectionError as errors_provider_connection_error,
+    ProviderError as errors_provider_error,
+    ProviderRateLimitError as errors_provider_rate_limit_error,
+    ProviderRequestError as errors_provider_request_error,
+    ProviderTimeoutError as errors_provider_timeout_error,
+)
 from ai_engine.results import StructuredResult as results_structured_result
 from ai_engine.usage import (
     format_usage_summary as usage_format_summary,
@@ -76,12 +88,21 @@ NEW_PUBLIC_NAMES = {
     "format_usage_summary",
 }
 
+PROVIDER_ERROR_PUBLIC_NAMES = {
+    "ProviderConnectionError",
+    "ProviderError",
+    "ProviderRateLimitError",
+    "ProviderRequestError",
+    "ProviderTimeoutError",
+}
+
 
 def test_public_api_preserves_previous_names_and_exposes_new_names():
     public_names = set(ai_engine.__all__)
 
     assert PREVIOUS_PUBLIC_NAMES <= public_names
     assert NEW_PUBLIC_NAMES <= public_names
+    assert PROVIDER_ERROR_PUBLIC_NAMES <= public_names
 
     for name in NEW_PUBLIC_NAMES:
         assert getattr(ai_engine, name) is not None
@@ -102,6 +123,11 @@ def test_new_reexports_are_the_objects_from_their_origin_modules():
         get_usage_totals: usage_get_totals,
         usage_difference: usage_get_difference,
         format_usage_summary: usage_format_summary,
+        ProviderConnectionError: errors_provider_connection_error,
+        ProviderError: errors_provider_error,
+        ProviderRateLimitError: errors_provider_rate_limit_error,
+        ProviderRequestError: errors_provider_request_error,
+        ProviderTimeoutError: errors_provider_timeout_error,
     }
 
     for public_object, origin_object in expected_identities.items():
@@ -110,6 +136,13 @@ def test_new_reexports_are_the_objects_from_their_origin_modules():
 
 def test_interactive_preflight_confirmation_is_not_in_public_all():
     assert "confirm_preflight" not in ai_engine.__all__
+
+
+def test_provider_error_internal_helpers_are_not_public():
+    assert "parse_retry_after_seconds" not in ai_engine.__all__
+    assert "retry_provider_call" not in ai_engine.__all__
+    assert not hasattr(ai_engine, "parse_retry_after_seconds")
+    assert not hasattr(ai_engine, "retry_provider_call")
 
 
 def test_clean_process_import_has_no_cycle_application_or_external_call():

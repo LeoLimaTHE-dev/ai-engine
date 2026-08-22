@@ -3,6 +3,11 @@ from pathlib import Path
 from ai_engine import (
     ConversationSession,
     PreflightReport,
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderRequestError,
+    ProviderTimeoutError,
     analyze_documents,
     build_summary_prompt,
     chat,
@@ -26,6 +31,53 @@ PATHS = get_paths()
 DEFAULT_INPUT = PATHS.input_dir / "batch_teste"
 
 DEFAULT_OUTPUT_DIR = PATHS.output_dir
+
+
+def format_error_for_user(exc: Exception) -> str:
+    if not isinstance(exc, ProviderError):
+        return str(exc)
+
+    provider = exc.provider.strip() or "desconhecido"
+    lines = [f"Provider: {provider}"]
+
+    if isinstance(exc, ProviderRateLimitError):
+        lines.append(
+            "A chamada foi recusada por limite de uso ou quota do provider."
+        )
+
+        retry_after = exc.retry_after_seconds
+        if retry_after is not None and retry_after > 0:
+            lines.append(
+                "O provider informou que uma nova tentativa pode ser feita "
+                f"em aproximadamente {retry_after:g} segundos."
+            )
+
+    elif isinstance(exc, ProviderTimeoutError):
+        lines.append("A chamada excedeu o tempo configurado para o provider.")
+
+    elif isinstance(exc, ProviderConnectionError):
+        lines.append("Não foi possível comunicar com o provider.")
+
+    elif isinstance(exc, ProviderRequestError):
+        lines.append(
+            "O provider recusou a requisição. "
+            "Repetir sem alterar a solicitação pode não resolver."
+        )
+
+        if exc.status_code is not None:
+            lines.append(f"Status HTTP: {exc.status_code}")
+
+        if exc.error_code is not None:
+            lines.append(f"Código do erro: {exc.error_code}")
+
+    else:
+        lines.append("A chamada ao provider falhou.")
+        if exc.retryable:
+            lines.append("A falha parece transitória.")
+        else:
+            lines.append("A falha não foi classificada como transitória.")
+
+    return "\n".join(lines)
 
 
 def confirm_preflight_interactively(
@@ -663,6 +715,20 @@ def run_chat(
             try:
                 summarize_session(session)
 
+            except ProviderError as exc:
+                print()
+                print("=" * 60)
+                print("ERRO NA COMPACTAÇÃO")
+                print("=" * 60)
+
+                print()
+                print(format_error_for_user(exc))
+
+                print()
+                print("A sessão continua aberta.")
+
+                continue
+
             except Exception as exc:
                 print()
                 print("=" * 60)
@@ -670,7 +736,7 @@ def run_chat(
                 print("=" * 60)
 
                 print()
-                print(str(exc))
+                print(format_error_for_user(exc))
 
                 print()
                 print("A sessão continua aberta.")
@@ -739,37 +805,34 @@ def run_chat(
                 user_message=user_message,
             )
 
-        except Exception as exc:
-            error_text = str(exc)
-
+        except ProviderError as exc:
             print()
             print("=" * 60)
             print("ERRO NA CHAMADA DA API")
             print("=" * 60)
 
             print()
+            print(format_error_for_user(exc))
 
-            if (
-                "429" in error_text
-                or "quota" in error_text.lower()
-                or "rate limit" in error_text.lower()
-            ):
-                print(
-                    "O provider recusou "
-                    "temporariamente a chamada "
-                    "por limite de uso/quota."
-                )
+            print()
+            print("Sua mensagem NÃO foi adicionada ao histórico.")
 
-                print()
-                print("Sua mensagem NÃO foi adicionada ao histórico.")
+            print()
+            print("A sessão continua aberta.")
 
-                print("Você pode aguardar ou trocar de provider.")
+            continue
 
-            else:
-                print("A chamada da API falhou:")
+        except Exception as exc:
+            print()
+            print("=" * 60)
+            print("ERRO NA CHAMADA")
+            print("=" * 60)
 
-                print()
-                print(error_text)
+            print()
+            print("Ocorreu um erro local ou interno:")
+
+            print()
+            print(format_error_for_user(exc))
 
             print()
             print("A sessão continua aberta.")

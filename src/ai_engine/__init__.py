@@ -8,6 +8,13 @@ from .chat import build_summary_prompt, chat, summarize_session
 from .limits import PreflightReport, analyze_documents, format_preflight
 from .multimodal import ask_document
 from .paths import OperationalPaths, get_paths
+from .providers.errors import (
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderRequestError,
+    ProviderTimeoutError,
+)
 from .prompts import load_prompt
 from .results import StructuredResult
 from .router import ask_ai
@@ -52,6 +59,11 @@ __all__ = [
     "save_session",
     "OperationalPaths",
     "PreflightReport",
+    "ProviderConnectionError",
+    "ProviderError",
+    "ProviderRateLimitError",
+    "ProviderRequestError",
+    "ProviderTimeoutError",
     "StructuredResult",
     "get_paths",
     "load_documents",
