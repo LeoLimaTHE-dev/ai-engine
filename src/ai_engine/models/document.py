@@ -73,9 +73,6 @@ class DocumentContent:
             for row in table.rows:
                 parts.append(" | ".join(row))
 
-            for row in table.rows:
-                parts.append(" | ".join(row))
-
         if self.images:
             parts.append(f"[IMAGES: {len(self.images)} embedded]")
 
