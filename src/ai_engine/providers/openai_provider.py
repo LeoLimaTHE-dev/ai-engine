@@ -103,4 +103,5 @@ DOCUMENT CONTENT:
                 total_tokens=(usage.total_tokens or 0),
             )
         )
-        return response.output_text
+
+    return response.output_text
