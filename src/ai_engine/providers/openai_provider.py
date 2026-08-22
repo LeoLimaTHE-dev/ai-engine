@@ -16,6 +16,7 @@ from openai import (
     RateLimitError,
 )
 
+from ai_engine.config import get_provider_timeout_seconds
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
 from ai_engine.usage import (
@@ -125,7 +126,10 @@ def _call_openai(operation: Callable[[], ResultT]) -> ResultT:
 
 
 def ask_openai(prompt: str) -> str:
-    client = OpenAI()
+    client = OpenAI(
+        timeout=get_provider_timeout_seconds(),
+        max_retries=0,
+    )
 
     model = os.getenv("OPENAI_MODEL", "gpt-5")
 
@@ -156,7 +160,10 @@ def ask_openai_document(
     document: DocumentContent,
     prompt: str,
 ) -> str:
-    client = OpenAI()
+    client = OpenAI(
+        timeout=get_provider_timeout_seconds(),
+        max_retries=0,
+    )
 
     model = os.getenv(
         "OPENAI_MODEL",

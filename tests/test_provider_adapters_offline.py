@@ -45,7 +45,7 @@ def test_ask_openai_builds_text_request_logs_usage_and_returns_text(monkeypatch)
             create=lambda **kwargs: calls.append(kwargs) or response,
         )
     )
-    monkeypatch.setattr(openai_module, "OpenAI", lambda: client)
+    monkeypatch.setattr(openai_module, "OpenAI", lambda **kwargs: client)
     monkeypatch.setattr(openai_module, "log_usage", logs.append)
     monkeypatch.setenv("OPENAI_MODEL", "openai-test")
 
@@ -69,7 +69,7 @@ def test_ask_openai_skips_logging_without_usage(monkeypatch):
     client = SimpleNamespace(
         responses=SimpleNamespace(create=lambda **kwargs: response)
     )
-    monkeypatch.setattr(openai_module, "OpenAI", lambda: client)
+    monkeypatch.setattr(openai_module, "OpenAI", lambda **kwargs: client)
 
     def fail_if_called(record):
         raise AssertionError("log_usage must not run without usage")
@@ -91,7 +91,7 @@ def test_ask_openai_document_builds_multimodal_payload_and_logs(monkeypatch):
             create=lambda **kwargs: calls.append(kwargs) or response,
         )
     )
-    monkeypatch.setattr(openai_module, "OpenAI", lambda: client)
+    monkeypatch.setattr(openai_module, "OpenAI", lambda **kwargs: client)
     monkeypatch.setattr(openai_module, "normalize_image", lambda image: normalized_image())
     monkeypatch.setattr(openai_module, "log_usage", logs.append)
     monkeypatch.setenv("OPENAI_MODEL", "openai-document-test")
@@ -139,7 +139,7 @@ def test_ask_gemini_builds_text_request_logs_usage_and_returns_text(monkeypatch)
             create=lambda **kwargs: calls.append(kwargs) or interaction,
         )
     )
-    monkeypatch.setattr(gemini_module.genai, "Client", lambda: client)
+    monkeypatch.setattr(gemini_module.genai, "Client", lambda **kwargs: client)
     monkeypatch.setattr(gemini_module, "log_usage", logs.append)
     monkeypatch.setenv("GEMINI_MODEL", "gemini-test")
 
@@ -171,7 +171,7 @@ def test_ask_gemini_document_builds_payload_and_skips_log_without_usage(monkeypa
             create=lambda **kwargs: calls.append(kwargs) or interaction,
         )
     )
-    monkeypatch.setattr(gemini_module.genai, "Client", lambda: client)
+    monkeypatch.setattr(gemini_module.genai, "Client", lambda **kwargs: client)
     monkeypatch.setattr(gemini_module, "normalize_image", lambda image: normalized_image())
 
     def fail_if_called(record):
@@ -215,7 +215,7 @@ def test_ask_anthropic_builds_text_request_logs_usage_and_returns_text(monkeypat
             create=lambda **kwargs: calls.append(kwargs) or response,
         )
     )
-    monkeypatch.setattr(anthropic_module, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic_module, "Anthropic", lambda **kwargs: client)
     monkeypatch.setattr(anthropic_module, "log_usage", logs.append)
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-test")
 
@@ -253,7 +253,7 @@ def test_ask_anthropic_document_builds_multimodal_payload_and_joins_text(monkeyp
             create=lambda **kwargs: calls.append(kwargs) or response,
         )
     )
-    monkeypatch.setattr(anthropic_module, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic_module, "Anthropic", lambda **kwargs: client)
     monkeypatch.setattr(
         anthropic_module,
         "normalize_image",

@@ -1,10 +1,12 @@
 import base64
+import math
 import os
 from collections.abc import Callable
 from typing import TypeVar
 
 from google import genai
 from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from google.genai._gaos.lib.compat_errors import (
     APIConnectionError as InteractionsAPIConnectionError,
     APIStatusError as InteractionsAPIStatusError,
@@ -17,6 +19,7 @@ from google.genai._gaos.lib.compat_errors import (
     RateLimitError as InteractionsRateLimitError,
 )
 
+from ai_engine.config import get_provider_timeout_seconds
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
 from ai_engine.usage import (
@@ -36,6 +39,14 @@ from .errors import (
 
 ResultT = TypeVar("ResultT")
 GeminiSDKError = InteractionsError | genai_errors.APIError
+
+
+def _gemini_http_options() -> genai_types.HttpOptions:
+    timeout_milliseconds = math.ceil(get_provider_timeout_seconds() * 1000)
+
+    return genai_types.HttpOptions(
+        timeout=timeout_milliseconds,
+    )
 
 
 def _structured_error_code(exc: GeminiSDKError, details: object) -> str | None:
@@ -157,7 +168,7 @@ def _call_gemini(operation: Callable[[], ResultT]) -> ResultT:
 
 
 def ask_gemini(prompt: str) -> str:
-    client = genai.Client()
+    client = genai.Client(http_options=_gemini_http_options())
 
     model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
@@ -190,7 +201,7 @@ def ask_gemini_document(
     document: DocumentContent,
     prompt: str,
 ) -> str:
-    client = genai.Client()
+    client = genai.Client(http_options=_gemini_http_options())
 
     model = os.getenv(
         "GEMINI_MODEL",

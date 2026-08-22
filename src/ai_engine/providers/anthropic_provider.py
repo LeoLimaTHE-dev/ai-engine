@@ -17,6 +17,7 @@ from anthropic import (
     RequestTooLargeError,
 )
 
+from ai_engine.config import get_provider_timeout_seconds
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
 from ai_engine.usage import (
@@ -131,7 +132,10 @@ def _call_anthropic(operation: Callable[[], ResultT]) -> ResultT:
 
 
 def ask_anthropic(prompt: str) -> str:
-    client = Anthropic()
+    client = Anthropic(
+        timeout=get_provider_timeout_seconds(),
+        max_retries=0,
+    )
 
     model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 
@@ -169,7 +173,10 @@ def ask_anthropic_document(
     document: DocumentContent,
     prompt: str,
 ) -> str:
-    client = Anthropic()
+    client = Anthropic(
+        timeout=get_provider_timeout_seconds(),
+        max_retries=0,
+    )
 
     model = os.getenv(
         "ANTHROPIC_MODEL",

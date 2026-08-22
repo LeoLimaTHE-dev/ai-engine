@@ -56,7 +56,7 @@ def call_text_with_error(monkeypatch, sdk_error):
         interactions=SimpleNamespace(create=raise_error),
     )
     usage_logs = []
-    monkeypatch.setattr(gemini_provider.genai, "Client", lambda: client)
+    monkeypatch.setattr(gemini_provider.genai, "Client", lambda **kwargs: client)
     monkeypatch.setattr(gemini_provider, "log_usage", usage_logs.append)
 
     with pytest.raises(ProviderError) as captured:
@@ -208,7 +208,7 @@ def test_document_call_uses_the_same_gemini_error_normalization(monkeypatch):
     client = SimpleNamespace(
         interactions=SimpleNamespace(create=raise_error),
     )
-    monkeypatch.setattr(gemini_provider.genai, "Client", lambda: client)
+    monkeypatch.setattr(gemini_provider.genai, "Client", lambda **kwargs: client)
 
     with pytest.raises(ProviderTimeoutError) as captured:
         gemini_provider.ask_gemini_document(
@@ -233,7 +233,7 @@ def test_log_usage_error_is_not_normalized_as_provider_error(monkeypatch):
     client = SimpleNamespace(
         interactions=SimpleNamespace(create=lambda **kwargs: interaction),
     )
-    monkeypatch.setattr(gemini_provider.genai, "Client", lambda: client)
+    monkeypatch.setattr(gemini_provider.genai, "Client", lambda **kwargs: client)
 
     def fail_to_log(record):
         raise RuntimeError("CSV unavailable")

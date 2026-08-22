@@ -41,7 +41,7 @@ def test_ask_openai_document_returns_output_text_without_usage(monkeypatch):
         responses=SimpleNamespace(create=fake_create),
     )
 
-    monkeypatch.setattr(openai_provider, "OpenAI", lambda: fake_client)
+    monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: fake_client)
 
     def fail_if_usage_is_logged(*args, **kwargs):
         raise AssertionError("log_usage must not run when response.usage is None")
@@ -92,7 +92,7 @@ def call_text_with_error(monkeypatch, sdk_error):
         responses=SimpleNamespace(create=raise_error),
     )
     usage_logs = []
-    monkeypatch.setattr(openai_provider, "OpenAI", lambda: client)
+    monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: client)
     monkeypatch.setattr(openai_provider, "log_usage", usage_logs.append)
 
     with pytest.raises(ProviderError) as captured:
@@ -241,7 +241,7 @@ def test_document_call_uses_the_same_openai_error_normalization(monkeypatch):
     client = SimpleNamespace(
         responses=SimpleNamespace(create=raise_error),
     )
-    monkeypatch.setattr(openai_provider, "OpenAI", lambda: client)
+    monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: client)
 
     with pytest.raises(ProviderTimeoutError) as captured:
         openai_provider.ask_openai_document(
@@ -260,7 +260,7 @@ def test_log_usage_error_is_not_normalized_as_provider_error(monkeypatch):
     client = SimpleNamespace(
         responses=SimpleNamespace(create=lambda **kwargs: response),
     )
-    monkeypatch.setattr(openai_provider, "OpenAI", lambda: client)
+    monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: client)
 
     def fail_to_log(record):
         raise RuntimeError("CSV unavailable")

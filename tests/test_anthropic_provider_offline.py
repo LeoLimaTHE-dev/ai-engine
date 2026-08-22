@@ -58,7 +58,7 @@ def call_text_with_error(monkeypatch, sdk_error):
         messages=SimpleNamespace(create=raise_error),
     )
     usage_logs = []
-    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda **kwargs: client)
     monkeypatch.setattr(anthropic_provider, "log_usage", usage_logs.append)
 
     with pytest.raises(ProviderError) as captured:
@@ -221,7 +221,7 @@ def test_document_call_uses_the_same_anthropic_error_normalization(monkeypatch):
     client = SimpleNamespace(
         messages=SimpleNamespace(create=raise_error),
     )
-    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda **kwargs: client)
 
     with pytest.raises(ProviderTimeoutError) as captured:
         anthropic_provider.ask_anthropic_document(
@@ -240,7 +240,7 @@ def test_log_usage_error_is_not_normalized_as_provider_error(monkeypatch):
     client = SimpleNamespace(
         messages=SimpleNamespace(create=lambda **kwargs: response),
     )
-    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda **kwargs: client)
 
     def fail_to_log(record):
         raise RuntimeError("CSV unavailable")
