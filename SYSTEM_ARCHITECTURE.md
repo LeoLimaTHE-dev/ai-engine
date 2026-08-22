@@ -16,9 +16,12 @@ não registra conteúdo pessoal, valores de usage, credenciais ou secrets.
 
 O ambiente está organizado em duas partes executáveis principais:
 
-- `C:\IA\0_Scripts\ia_interativa.py` é a aplicação/interface principal atual.
-  Ela recebe comandos do usuário e coordena documentos, sessões, preflight,
-  providers, usage e criação de arquivos.
+- `C:\IA\api\application\ia_interativa.py` é a implementação oficial e
+  versionada da aplicação/interface principal. Ela recebe comandos do usuário
+  e coordena documentos, sessões, preflight, providers, usage e arquivos.
+- `C:\IA\0_Scripts\ia_interativa.py` é somente um launcher local fino, sem
+  lógica de negócio, que delega à implementação versionada com
+  `runpy.run_path()`.
 - `C:\IA\api` contém o projeto `ai-engine`, uma biblioteca Python reutilizável
   responsável por leitura de documentos, workflows, conversa, providers,
   respostas estruturadas, actions, exporters, limites e persistência.
@@ -30,7 +33,7 @@ saídas, templates e estado operacional, ou reservam espaço para usos futuros.
 
 ```text
 C:\IA
-├── 0_Scripts\       aplicação atual, ferramentas e scripts manuais
+├── 0_Scripts\       launcher local, ferramentas e scripts manuais
 ├── 1_Projetos\      documentos organizados por projeto ou domínio
 ├── 2_Entrada\       arquivos selecionados para processamento
 ├── 3_Saída\         arquivos produzidos pela aplicação e por scripts
@@ -38,16 +41,19 @@ C:\IA
 ├── 5_Modelos\       área reservada, atualmente vazia
 ├── 6_Dados\         sessões persistidas e registros de usage
 ├── 7_Temporario\    estrutura temporária reservada, atualmente vazia
-└── api\              biblioteca Python ai-engine, documentação e testes
+└── api\              engine, aplicação versionada, documentação e testes
 ```
 
 ### `0_Scripts`
 
-Contém a interface interativa atual e executáveis auxiliares. Não é parte do
-pacote `ai_engine`; seus arquivos são consumidores externos da biblioteca.
+Contém o launcher local da interface e executáveis auxiliares. O launcher
+`ia_interativa.py` apenas localiza `api\application\ia_interativa.py` em relação
+ao próprio arquivo e transfere a execução com `runpy.run_path()`. Ele não
+contém menus, configuração operacional ou chamadas de provider.
 
-`ia_interativa.py` é o ponto de entrada operacional principal. Os outros
-scripts são ferramentas, protótipos, testes manuais ou implementações antigas.
+Os demais scripts são ferramentas, protótipos, testes manuais ou
+implementações antigas e ainda não foram todos migrados para a configuração
+central de paths.
 
 ### `1_Projetos`
 
@@ -64,14 +70,14 @@ Não é armazenamento interno do engine.
 Área convencional de entrada. Contém exemplos de documentos, planilhas,
 imagens e PDFs compatíveis com os readers do engine.
 
-O default atual de `ia_interativa.py` é
+O default atual da aplicação versionada é
 `C:\IA\2_Entrada\batch_teste`, mas a interface permite que o usuário informe
 outro arquivo ou diretório. O engine recebe um caminho e não depende
 diretamente do nome `2_Entrada`.
 
 ### `3_Saída`
 
-Destino convencional dos arquivos gerados. `ia_interativa.py` envia para essa
+Destino convencional dos arquivos gerados. A aplicação versionada envia para essa
 pasta os outputs descritos por respostas estruturadas. Alguns scripts manuais
 usam subdiretórios próprios, como `actions_teste` e `teste_exporters`.
 
@@ -85,7 +91,7 @@ Contém templates Markdown reutilizáveis para análise, comparação e resumo. 
 módulo `ai_engine.prompts` procura templates nessa pasta por default, e os
 workflows podem combiná-los com uma instrução específica do usuário.
 
-A conversa normal de `ia_interativa.py` não seleciona esses templates. Ela usa
+A conversa normal da aplicação não seleciona esses templates. Ela usa
 a mensagem livre do usuário, o contexto da sessão e as instruções estruturadas
 internas do engine. Portanto, `4_Prompts` participa apenas de fluxos que pedem
 explicitamente um `prompt_template`, inclusive alguns scripts manuais.
@@ -117,16 +123,17 @@ não contém arquivos e não participa do fluxo auditado.
 
 ### `api`
 
-É o projeto da biblioteca `ai-engine`. `src/ai_engine` contém o código
-reutilizável e `tests` contém a suíte offline e os smoke tests reais separados.
-O repositório não contém atualmente uma CLI empacotada; a aplicação principal
-permanece em `0_Scripts`.
+É o repositório do `ai-engine` e da aplicação. `src/ai_engine` contém a
+biblioteca reutilizável, `application/ia_interativa.py` contém a implementação
+oficial da interface e `tests` contém a suíte offline e os smoke tests reais
+separados. Ainda não existe entry point de console empacotado.
 
 ## Separação de responsabilidades
 
 | Área | Responsabilidade atual | Localização principal |
 |---|---|---|
-| Aplicação/interface | Menus, input humano, confirmação, coordenação de sessão, tratamento de erros e escolha de destinos | `0_Scripts\ia_interativa.py` |
+| Aplicação/interface | Menus, input humano, confirmação, coordenação de sessão, tratamento de erros e escolha de destinos | `api\application\ia_interativa.py` |
+| Launcher local | Delega ao arquivo versionado sem lógica de negócio | `0_Scripts\ia_interativa.py` |
 | Biblioteca/engine | Modelos documentais, readers, batch, workflows, chat, providers, parsing, actions, exporters e persistência | `api\src\ai_engine` |
 | Entrada | Documentos selecionados para processamento | `2_Entrada` ou qualquer caminho fornecido pelo usuário |
 | Saída | Resultados gerados e artefatos de testes manuais | `3_Saída` |
@@ -141,7 +148,10 @@ permanece em `0_Scripts`.
 Usuário
   |
   v
-0_Scripts\ia_interativa.py
+0_Scripts\ia_interativa.py (launcher com runpy)
+  |
+  v
+api\application\ia_interativa.py
   |-- escolhe provider e caminho de entrada
   |-- carrega ou restaura uma sessão
   |-- coordena preflight e confirmação humana
@@ -210,9 +220,9 @@ O caminho textual usado na compactação chama `ask_ai()`, que passa por
 são stateless; a continuidade da conversa existe porque o contexto local é
 reconstruído e reenviado.
 
-## Papel atual de `ia_interativa.py`
+## Papel atual da aplicação e do launcher
 
-`ia_interativa.py` é a camada de aplicação. Ela implementa:
+`api\application\ia_interativa.py` é a camada de aplicação. Ela implementa:
 
 - criação, seleção, restauração, salvamento e exclusão de sessões;
 - escolha e troca de provider;
@@ -232,12 +242,23 @@ reconstruído e reenviado.
 A interface não implementa readers, adapters de provider ou exporters. Ela os
 coordena por meio de `ai_engine`.
 
+`0_Scripts\ia_interativa.py` não implementa nenhuma dessas responsabilidades.
+Seu único papel é permitir que o comando histórico continue funcionando:
+
+```powershell
+uv run --project C:\IA\api python C:\IA\0_Scripts\ia_interativa.py
+```
+
+O launcher não manipula `sys.path`, `PYTHONPATH`, `.venv`, uv ou a instalação
+editable. A resolução de `ai_engine` continua sendo responsabilidade do
+ambiente do projeto Python.
+
 ## Fronteira entre a interface e o engine
 
 A fronteira conceitual atual é:
 
 ```text
-ia_interativa.py
+application\ia_interativa.py
   fornece: decisões do usuário, confirmação, paths e apresentação
   consome:  documentos, sessão, chat, preflight, usage e actions
                          |
@@ -248,7 +269,7 @@ ai_engine
 ```
 
 Na implementação atual, a fronteira pública ainda não está completa.
-`ia_interativa.py` usa tanto símbolos reexportados por `ai_engine.__init__`
+`application\ia_interativa.py` usa tanto símbolos reexportados por `ai_engine.__init__`
 quanto módulos internos:
 
 - `ai_engine.actions`;
@@ -266,8 +287,8 @@ chamada.
 
 ### Interface atual
 
-- `ia_interativa.py`: aplicação principal multi-provider, com documentos,
-  sessões, memória, preflight, usage e criação de outputs.
+- `ia_interativa.py`: launcher local fino para a aplicação versionada; não
+  contém lógica da interface.
 
 ### Ferramentas úteis
 
@@ -308,21 +329,23 @@ autoriza mudança nesses arquivos.
 
 ## Dependências de paths
 
-### Defaults absolutos no engine
+### Configuração central do engine
 
-| Módulo | Default atual |
-|---|---|
-| `ai_engine.prompts` | `C:\IA\4_Prompts` |
-| `ai_engine.sessions` | `C:\IA\6_Dados\sessions` |
-| `ai_engine.usage` | `C:\IA\6_Dados\usage` |
+`ai_engine.paths` expõe `OperationalPaths`, uma configuração imutável que
+deriva entrada, saída, prompts, modelos, dados, sessions, usage e temporários de
+uma única raiz. A precedência é raiz explícita, `IA_ROOT` presente no ambiente
+do processo e, por fim, `C:\IA`.
 
-Esses defaults tornam a biblioteca funcional no ambiente atual, mas ligam seu
-comportamento padrão à estrutura Windows de `C:\IA`.
+Prompts, sessions e usage consultam essa configuração no momento da chamada
+quando não recebem path explícito. Argumentos explícitos continuam
+prevalecendo. `ai_engine.paths` não carrega `.env`, cria diretórios ou participa
+da resolução/importação do pacote Python.
 
 ### Paths da aplicação e scripts
 
-- `ia_interativa.py` define `C:\IA` como raiz, usa
-  `2_Entrada\batch_teste` como entrada default e `3_Saída` como destino;
+- a aplicação versionada usa uma instância de `OperationalPaths`, deriva
+  `input_dir / "batch_teste"`, `output_dir` e `sessions_dir`;
+- sem `IA_ROOT`, esses paths continuam sob `C:\IA`;
 - os scripts de resumo apontam para arquivos específicos em `2_Entrada` e
   destinos específicos em `3_Saída`;
 - os scripts `testar_*` usam fixtures específicas em `2_Entrada` e, quando
@@ -349,8 +372,7 @@ Não há dependência de código identificada para `1_Projetos`, `5_Modelos` ou
 
 ### Dívidas técnicas e acoplamentos
 
-- paths absolutos específicos de `C:\IA` aparecem no engine e na maioria dos
-  scripts externos;
+- scripts auxiliares e legados ainda possuem paths absolutos próprios;
 - a interface principal concentra menus, coordenação, persistência,
   telemetria, tratamento de erros e actions em um único arquivo;
 - a interface importa módulos internos em vez de depender apenas de uma API
@@ -383,14 +405,14 @@ e um contrato explícito com a aplicação.
 Nenhum arquivo precisa ser movido para iniciar a evolução arquitetural. A
 ordem segura é:
 
-1. preservar como baseline a suíte offline existente e o comportamento de
-   `ia_interativa.py`;
+1. preservar como baseline os 210 testes offline e o comportamento de
+   `application\ia_interativa.py`;
 2. documentar o comando e o ambiente usados para tornar `ai_engine` importável
    pelos scripts externos;
-3. reconhecer formalmente `ia_interativa.py` como aplicação e `api` como
-   biblioteca, sem reorganização física imediata;
-4. criar futuramente uma configuração central de paths, mantendo inicialmente
-   os mesmos defaults de `C:\IA`;
+3. manter a implementação da aplicação versionada junto ao engine e o launcher
+   externo sem lógica de negócio;
+4. migrar gradualmente ferramentas e scripts legados para `ai_engine.paths`,
+   mantendo os mesmos defaults de `C:\IA`;
 5. estabilizar uma API pública que cubra os serviços usados pela interface,
    reduzindo imports de módulos internos;
 6. separar gradualmente as responsabilidades internas da interface, mantendo

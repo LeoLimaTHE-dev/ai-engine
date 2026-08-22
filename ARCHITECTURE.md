@@ -7,7 +7,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Área | Módulos | Responsabilidade atual |
 |---|---|---|
 | API pública | `__init__.py` | Reexporta roteamento, multimodal, batch, workflows, chat e sessões. |
-| Configuração | `config.py` | Localiza o `.env` na raiz e o carrega sob demanda. |
+| Configuração | `config.py`, `paths.py` | Localiza o `.env` do projeto e representa, separadamente, os paths operacionais. |
 | Modelo de entrada | `models/document.py` | Representação comum de documentos, imagens e tabelas. |
 | Ingestão | `readers/` | Converte arquivos suportados em `DocumentContent`. |
 | Providers | `providers/` | Chamadas diretas aos SDKs Gemini, OpenAI e Anthropic. |
@@ -17,8 +17,28 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 180 testes, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 210 testes, sem chamadas reais a providers. |
 | Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
+
+## Paths operacionais
+
+`paths.py` define `OperationalPaths`, um dataclass imutável com raiz e
+diretórios derivados para entrada, saída, prompts, modelos, dados, sessões,
+usage e temporários. `get_paths(root=...)` usa a seguinte precedência:
+
+1. raiz explícita;
+2. `IA_ROOT` já presente em `os.environ`;
+3. fallback `C:\IA`.
+
+O módulo não carrega `.env`, não cria diretórios e não participa da resolução
+do pacote Python. Ele não manipula `sys.path`, `PYTHONPATH`, `.venv`, uv ou a
+localização de `api`.
+
+`prompts.py`, `sessions.py` e `usage.py` consultam `get_paths()` no momento de
+cada operação sem argumento explícito. Assim, `IA_ROOT` não fica congelada na
+importação. `prompts_dir`, `sessions_dir` e `usage_file` explícitos continuam
+prevalecendo. As constantes `DEFAULT_*` históricas permanecem como aliases de
+compatibilidade para os caminhos sob `C:\IA`.
 
 ## Modelo documental
 
@@ -70,7 +90,7 @@ O prompt contém a instrução e `document.to_text()`. Imagens são anexadas sep
 
 ## Workflow e prompts livres
 
-`run_workflow()` coleta e lê um caminho; `run_workflow_documents()` recebe documentos já carregados, evitando releitura após preflight externo. `build_prompt()` exige instrução livre não vazia. Opcionalmente, `load_prompt()` carrega um caminho existente ou procura `.md`/`.txt` em `C:\IA\4_Prompts`, concatenando template e instrução específica.
+`run_workflow()` coleta e lê um caminho; `run_workflow_documents()` recebe documentos já carregados, evitando releitura após preflight externo. `build_prompt()` exige instrução livre não vazia. Opcionalmente, `load_prompt()` carrega um caminho existente ou procura `.md`/`.txt` em `get_paths().prompts_dir`, concatenando template e instrução específica.
 
 Os equivalentes estruturados acrescentam o contrato textual de outputs e convertem a resposta para `StructuredResult`.
 
@@ -98,7 +118,7 @@ Os equivalentes estruturados acrescentam o contrato textual de outputs e convert
 
 ## Usage tracking
 
-Cada adaptador registra usage após a chamada. `UsageRecord` comporta input, output, total, thought e cached tokens. `log_usage()` acrescenta uma linha ao CSV padrão `C:\IA\6_Dados\usage\api_usage.csv`. Há funções para somar o CSV, calcular deltas e formatar resumo. Gemini preenche thought/cached quando disponíveis; os demais registram campos básicos.
+Cada adaptador registra usage após a chamada. `UsageRecord` comporta input, output, total, thought e cached tokens. `log_usage()` acrescenta uma linha a `get_paths().usage_dir / "api_usage.csv"` quando não recebe arquivo explícito. Há funções para somar o CSV, calcular deltas e formatar resumo. Gemini preenche thought/cached quando disponíveis; os demais registram campos básicos.
 
 ## Chat contínuo e memória compactada
 
@@ -114,19 +134,20 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Sessões persistentes
 
-`save_session()` grava JSON com nome, provider, `input_path`, resumo, limites de memória, mensagens e pendências em `C:\IA\6_Dados\sessions` por padrão. Há listagem, leitura e remoção.
+`save_session()` grava JSON com nome, provider, `input_path`, resumo, limites de memória, mensagens e pendências em `get_paths().sessions_dir` por padrão. Há listagem, leitura e remoção. Um `sessions_dir` explícito prevalece.
 
 `restore_conversation_session(data, documents)` exige documentos já carregados: o JSON guarda o caminho, não bytes ou `DocumentContent`. A camada chamadora precisa recarregar os documentos.
 
 ## Testes automatizados offline
 
-A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 180 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 210 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
 - batch, workflow e prompts;
 - structured outputs, actions e exporters;
 - limits/preflight e usage tracking;
 - chat, memória compactada e sessões persistentes;
+- paths operacionais, resolução dinâmica e defaults da aplicação;
 - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
 
 Os adapters são testados sem credenciais ou rede: os testes verificam roteamento, payload básico, logging de usage e retorno textual contra clientes falsos. Isso não valida a integração real com os serviços.
