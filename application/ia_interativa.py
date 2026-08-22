@@ -2,32 +2,23 @@ from pathlib import Path
 
 from ai_engine import (
     ConversationSession,
+    PreflightReport,
+    analyze_documents,
+    build_summary_prompt,
     chat,
     delete_session,
+    execute_structured_result,
+    format_preflight,
+    format_usage_summary,
+    get_paths,
+    get_usage_totals,
     list_sessions,
+    load_documents,
     load_session_data,
     restore_conversation_session,
     save_session,
-)
-from ai_engine.actions import (
-    execute_structured_result,
-)
-from ai_engine.chat import (
-    build_summary_prompt,
     summarize_session,
-)
-from ai_engine.limits import (
-    analyze_documents,
-    confirm_preflight,
-)
-from ai_engine.paths import get_paths
-from ai_engine.usage import (
-    format_usage_summary,
-    get_usage_totals,
     usage_difference,
-)
-from ai_engine.workflow import (
-    load_documents,
 )
 
 PATHS = get_paths()
@@ -35,6 +26,42 @@ PATHS = get_paths()
 DEFAULT_INPUT = PATHS.input_dir / "batch_teste"
 
 DEFAULT_OUTPUT_DIR = PATHS.output_dir
+
+
+def confirm_preflight_interactively(
+    report: PreflightReport,
+) -> bool:
+    print()
+    print(format_preflight(report))
+
+    print()
+
+    if report.errors:
+        print("=" * 60)
+        print("ATENÇÃO: A REQUISIÇÃO ULTRAPASSA OS LIMITES CONFIGURADOS.")
+        print("=" * 60)
+
+        print()
+        print(
+            "Ela ainda pode ser executada, "
+            "mas poderá consumir uma quantidade "
+            "elevada de tokens ou recursos."
+        )
+
+        print()
+
+        choice = input('Digite "CONFIRMAR" para continuar: ').strip()
+
+        return choice == "CONFIRMAR"
+
+    choice = input("Continuar com a chamada da API? [s/N]: ").strip().lower()
+
+    return choice in (
+        "s",
+        "sim",
+        "y",
+        "yes",
+    )
 
 
 # ============================================================
@@ -616,7 +643,7 @@ def run_chat(
                 extra_text=summary_prompt,
             )
 
-            summary_confirmed = confirm_preflight(summary_report)
+            summary_confirmed = confirm_preflight_interactively(summary_report)
 
             if not summary_confirmed:
                 print()
@@ -687,7 +714,7 @@ def run_chat(
         print("REQUISIÇÃO PRINCIPAL")
         print("=" * 60)
 
-        confirmed = confirm_preflight(report)
+        confirmed = confirm_preflight_interactively(report)
 
         if not confirmed:
             print()

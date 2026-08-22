@@ -1,8 +1,12 @@
+import ast
 import builtins
 import importlib.util
 from pathlib import Path
 
 import ai_engine
+import pytest
+from ai_engine import PreflightReport, format_preflight
+from ai_engine.limits import confirm_preflight as legacy_confirm_preflight
 from ai_engine.session import ConversationSession
 
 
@@ -91,3 +95,136 @@ def test_choose_input_still_allows_user_override(monkeypatch, tmp_path):
     monkeypatch.setattr(builtins, "input", lambda prompt: f'"{chosen_path}"')
 
     assert module.choose_input() == chosen_path
+
+
+def test_interface_imports_engine_symbols_only_from_public_api():
+    tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
+    engine_imports = [
+        node
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, (ast.Import, ast.ImportFrom))
+            and (
+                (isinstance(node, ast.ImportFrom) and node.module == "ai_engine")
+                or (
+                    isinstance(node, ast.Import)
+                    and any(alias.name == "ai_engine" for alias in node.names)
+                )
+            )
+        )
+    ]
+    internal_imports = [
+        node
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.startswith("ai_engine.")
+        )
+        or (
+            isinstance(node, ast.Import)
+            and any(alias.name.startswith("ai_engine.") for alias in node.names)
+        )
+    ]
+
+    assert len(engine_imports) == 1
+    assert isinstance(engine_imports[0], ast.ImportFrom)
+    assert internal_imports == []
+
+
+def make_preflight_report(errors=None):
+    return PreflightReport(
+        file_count=1,
+        text_characters=4,
+        estimated_text_tokens=1,
+        image_count=0,
+        image_bytes=0,
+        errors=errors or [],
+    )
+
+
+def assert_confirmation_matches_legacy(
+    module,
+    report,
+    choice,
+    expected,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(builtins, "input", lambda prompt: choice)
+
+    legacy_result = legacy_confirm_preflight(report)
+    legacy_output = capsys.readouterr().out
+
+    local_result = module.confirm_preflight_interactively(report)
+    local_output = capsys.readouterr().out
+
+    assert local_result is expected
+    assert local_result is legacy_result
+    assert local_output == legacy_output
+    assert format_preflight(report) in local_output
+
+
+@pytest.mark.parametrize(
+    ("choice", "expected"),
+    [
+        ("s", True),
+        ("sim", True),
+        ("y", True),
+        ("yes", True),
+        ("", False),
+        ("n", False),
+    ],
+)
+def test_local_normal_confirmation_matches_legacy(
+    choice,
+    expected,
+    monkeypatch,
+    capsys,
+):
+    module = load_interface(
+        monkeypatch,
+        "ia_interativa_normal_confirmation_test",
+    )
+
+    assert_confirmation_matches_legacy(
+        module=module,
+        report=make_preflight_report(),
+        choice=choice,
+        expected=expected,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+
+@pytest.mark.parametrize(
+    ("choice", "expected"),
+    [
+        ("CONFIRMAR", True),
+        (" CONFIRMAR ", True),
+        ("confirmar", False),
+        ("s", False),
+        ("sim", False),
+        ("y", False),
+        ("yes", False),
+    ],
+)
+def test_local_blocked_confirmation_matches_legacy(
+    choice,
+    expected,
+    monkeypatch,
+    capsys,
+):
+    module = load_interface(
+        monkeypatch,
+        "ia_interativa_blocked_confirmation_test",
+    )
+
+    assert_confirmation_matches_legacy(
+        module=module,
+        report=make_preflight_report(errors=["Maximum exceeded"]),
+        choice=choice,
+        expected=expected,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
