@@ -17,7 +17,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Primeira base de regressão automatizada com pytest, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 180 testes, sem chamadas reais a providers. |
 
 ## Modelo documental
 
@@ -119,13 +119,18 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Testes automatizados offline
 
-Existe uma primeira base de regressão com pytest, composta por quatro testes que passam sem chamadas reais a APIs:
+A suíte de regressão offline possui 180 testes passando com pytest, organizados em arquivos `tests/test_*_offline.py`. Ela usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
-- `tests/test_document_content_offline.py` verifica que a serialização textual inclui cada linha de tabela uma única vez;
-- `tests/test_xlsx_reader_offline.py` verifica uma `DocumentTable` por worksheet e a representação de worksheet vazia com `rows=[]`;
-- `tests/test_openai_provider_offline.py` usa monkeypatch para verificar que `ask_openai_document()` retorna `response.output_text` quando `response.usage` é `None`.
+- models e readers;
+- batch, workflow e prompts;
+- structured outputs, actions e exporters;
+- limits/preflight e usage tracking;
+- chat, memória compactada e sessões persistentes;
+- routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
 
-Essa base cobre somente esses comportamentos. Ela não demonstra cobertura dos demais readers, dos outros caminhos dos providers, de multimodal com imagens, batch, workflows, outputs/actions, exporters, preflight/limits, usage tracking, chat, memória ou sessões.
+Os adapters são testados sem credenciais ou rede: os testes verificam roteamento, payload básico, logging de usage e retorno textual contra clientes falsos. Isso não valida a integração real com os serviços.
+
+`tests/test_openai.py`, `tests/test_gemini.py` e `tests/test_anthropic.py` continuam sendo smoke tests manuais com chamadas reais e não integram a suíte offline. `tests/Providertest.py` também é um script manual, atualmente incompleto. Esses arquivos precisam permanecer fora de execuções automatizadas sem intenção explícita.
 
 ## Fluxo completo de dados
 
