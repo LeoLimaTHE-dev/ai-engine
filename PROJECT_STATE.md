@@ -31,15 +31,15 @@ O `ai-engine` é uma biblioteca Python local para ler documentos, enviá-los a G
 ## Validação existente
 
 - Os arquivos Python de `src/` e `tests/` foram analisados pelo parser AST na revisão de 22/08/2026 sem erro de sintaxe.
-- Os 180 testes da suíte offline atual passam com pytest. A cobertura automatizada inclui:
+- A coleta padrão do pytest está restrita por `pyproject.toml` a arquivos `test_*_offline.py`; `uv run pytest` executa atualmente os 180 testes da suíte offline, todos passando. A cobertura automatizada inclui:
   - models e readers, com fixtures locais para texto, formatos tabulares, DOCX, PDF e imagens;
   - batch, workflow e prompts;
   - structured outputs, actions e exporters;
   - limits/preflight e usage tracking;
   - chat, memória compactada e sessões persistentes;
   - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
-- `tests/test_openai.py`, `tests/test_gemini.py` e `tests/test_anthropic.py` são scripts manuais de smoke test que fazem chamadas reais e imprimem a resposta. Não possuem assertions, mocks ou isolamento.
-- `tests/Providertest.py` contém uma chamada manual a `ask_ai`, mas não importa esse símbolo e não constitui teste executável isoladamente.
+- Os quatro smoke tests reais foram movidos para `tests/smoke/` e usam nomes fora do padrão de coleta automática. Todos protegem a execução em `if __name__ == "__main__":`; importá-los não dispara chamadas de rede, e eles não são executados pela coleta padrão.
+- `tests/smoke/smoke_ai_engine.py` cobre manualmente o caminho público `ai_engine.ask_ai()`; os outros módulos smoke exercitam diretamente OpenAI, Gemini e Anthropic.
 - Os smoke tests reais de provider não fazem parte da suíte offline e não foram executados nesta revisão, para não consumir APIs. A cobertura dos adapters na suíte automatizada valida payloads, roteamento, usage e retornos com mocks; ela não valida credenciais, rede, disponibilidade, modelos ou comportamento real dos serviços externos.
 
 Assim, “implementado” não implica cobertura integral: os 180 testes exercitam os contratos listados acima, mas não todos os caminhos possíveis do engine. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
@@ -75,8 +75,7 @@ Assim, “implementado” não implica cobertura integral: os 180 testes exercit
 ## Próxima etapa: robustez e organização
 
 1. Organizar e continuar expandindo a suíte offline a partir dos 180 testes atuais, priorizando contratos ainda não cobertos e manutenção clara entre camadas.
-2. Separar os smoke tests manuais de provider da coleta padrão do pytest, mantendo chamadas externas condicionadas a uma execução explicitamente intencional.
-3. Integrar preflight de modo explícito aos fluxos de alto nível, mantendo confirmação na camada de interface.
-4. Centralizar configuração, caminhos, modelos e parâmetros de provider; remover defaults dependentes da máquina.
-5. Definir contratos e validação mais fortes para respostas estruturadas e sessões persistidas.
-6. Documentar uma API pública estável e exemplos no `README.md` antes de adicionar novas funcionalidades.
+2. Integrar preflight de modo explícito aos fluxos de alto nível, mantendo confirmação na camada de interface.
+3. Centralizar configuração, caminhos, modelos e parâmetros de provider; remover defaults dependentes da máquina.
+4. Definir contratos e validação mais fortes para respostas estruturadas e sessões persistidas.
+5. Documentar uma API pública estável e exemplos no `README.md` antes de adicionar novas funcionalidades.

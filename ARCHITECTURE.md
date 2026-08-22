@@ -18,6 +18,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
 | Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 180 testes, sem chamadas reais a providers. |
+| Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
 
 ## Modelo documental
 
@@ -119,7 +120,7 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Testes automatizados offline
 
-A suíte de regressão offline possui 180 testes passando com pytest, organizados em arquivos `tests/test_*_offline.py`. Ela usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 180 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
 - batch, workflow e prompts;
@@ -130,7 +131,7 @@ A suíte de regressão offline possui 180 testes passando com pytest, organizado
 
 Os adapters são testados sem credenciais ou rede: os testes verificam roteamento, payload básico, logging de usage e retorno textual contra clientes falsos. Isso não valida a integração real com os serviços.
 
-`tests/test_openai.py`, `tests/test_gemini.py` e `tests/test_anthropic.py` continuam sendo smoke tests manuais com chamadas reais e não integram a suíte offline. `tests/Providertest.py` também é um script manual, atualmente incompleto. Esses arquivos precisam permanecer fora de execuções automatizadas sem intenção explícita.
+Os quatro módulos em `tests/smoke/` são smoke tests manuais e não são executados pela coleta padrão. Seus nomes não correspondem a `test_*_offline.py`, e toda chamada real está dentro de uma função `main()` protegida por `if __name__ == "__main__":`; portanto, importar os módulos não dispara chamadas de rede. `smoke_ai_engine.py` cobre manualmente o caminho público `ai_engine.ask_ai()`, enquanto `smoke_openai.py`, `smoke_gemini.py` e `smoke_anthropic.py` exercitam diretamente os respectivos SDKs.
 
 ## Fluxo completo de dados
 
