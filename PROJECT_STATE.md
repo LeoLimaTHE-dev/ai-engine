@@ -43,12 +43,25 @@ O `ai-engine` é uma biblioteca Python local para ler documentos, enviá-los a G
 - Contrato público explícito para `OperationalPaths`, `PreflightReport` e
   `StructuredResult`, além das operações de paths, ingestão, preflight,
   compactação, actions e consulta de usage usadas pela aplicação.
+- Contrato comum de falhas de provider em `ai_engine.providers.errors`, formado
+  por `ProviderError`, `ProviderRateLimitError`, `ProviderTimeoutError`,
+  `ProviderConnectionError` e `ProviderRequestError`. Os cinco tipos são
+  públicos pela raiz de `ai_engine`; `parse_retry_after_seconds()` permanece
+  interno.
+- OpenAI, Anthropic e Gemini convertem erros conhecidos dos SDKs para o contrato
+  comum e preservam a causa original com `raise ... from exc`.
+- Timeout comum e política de retry são lidos dinamicamente do ambiente. OpenAI
+  e Anthropic desativam o retry nativo (`max_retries=0`) e usam o helper interno
+  `retry_provider_call()`; Gemini permanece fora desse helper.
+- A aplicação apresenta falhas de provider por tipo e metadata por meio de
+  `format_error_for_user()`, sem conhecer exceções dos SDKs nem classificar
+  mensagens por ocorrências textuais de `429`, `quota` ou `rate limit`.
 - Suíte automatizada offline com pytest cobrindo models/readers; batch/workflow/prompts; structured outputs/actions/exporters; limits/usage; chat/memória/sessões; e routing/multimodal/images/adapters de providers com clientes mockados.
 
 ## Validação existente
 
 - Os arquivos Python de `src/` e `tests/` foram analisados pelo parser AST na revisão de 22/08/2026 sem erro de sintaxe.
-- A coleta padrão do pytest está restrita por `pyproject.toml` a arquivos `test_*_offline.py`; `uv run pytest` executa atualmente os 228 testes da suíte offline, todos passando. A cobertura automatizada inclui:
+- A coleta padrão do pytest está restrita por `pyproject.toml` a arquivos `test_*_offline.py`; `uv run pytest` executa atualmente os 410 testes da suíte offline, todos passando. A cobertura automatizada inclui:
   - models e readers, com fixtures locais para texto, formatos tabulares, DOCX, PDF e imagens;
   - batch, workflow e prompts;
   - structured outputs, actions e exporters;
@@ -60,11 +73,14 @@ O `ai-engine` é uma biblioteca Python local para ler documentos, enviá-los a G
   - equivalência entre a confirmação humana local da aplicação e a função
     legada de preflight;
   - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
+  - normalização de erros dos três SDKs, configuração de timeout, política de
+    retry isolada e integrada a OpenAI/Anthropic e tratamento estruturado na
+    aplicação, sem sleep real ou rede.
 - Os quatro smoke tests reais foram movidos para `tests/smoke/` e usam nomes fora do padrão de coleta automática. Todos protegem a execução em `if __name__ == "__main__":`; importá-los não dispara chamadas de rede, e eles não são executados pela coleta padrão.
 - `tests/smoke/smoke_ai_engine.py` cobre manualmente o caminho público `ai_engine.ask_ai()`; os outros módulos smoke exercitam diretamente OpenAI, Gemini e Anthropic.
 - Os smoke tests reais de provider não fazem parte da suíte offline e não foram executados nesta revisão, para não consumir APIs. A cobertura dos adapters na suíte automatizada valida payloads, roteamento, usage e retornos com mocks; ela não valida credenciais, rede, disponibilidade, modelos ou comportamento real dos serviços externos.
 
-Assim, “implementado” não implica cobertura integral: os 228 testes exercitam os contratos listados acima, mas não todos os caminhos possíveis do engine. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
+Assim, “implementado” não implica cobertura integral: os 410 testes exercitam os contratos listados acima, mas não todos os caminhos possíveis do engine. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
 
 ## Limitações e pendências conhecidas
 
@@ -78,6 +94,12 @@ Assim, “implementado” não implica cobertura integral: os 228 testes exercit
   `.env`. O carregamento de `.env` continua sendo uma responsabilidade separada.
 - O carregamento de `.env` ocorre ao importar `router`, não de forma uniforme em todos os módulos chamados diretamente.
 - Modelos e `max_tokens` variam entre operações textuais e documentais; os defaults podem não existir na conta/API usada e não há camada comum de configuração.
+- No `google-genai 2.18.1`, `interactions.create()` usa internamente `_gaos`.
+  Seu timeout é configurado por `HttpOptions` em milissegundos, mas os retries
+  nativos desse caminho não puderam ser zerados por API pública confiável. Por
+  isso, `retry_provider_call()` não é usado pelo Gemini, que continua sob o
+  retry nativo do SDK. Não há monkeypatch nem alteração de `_gaos`; seus tipos
+  privados ficam restritos ao adapter e aos testes específicos do Gemini.
 - Batch individual é sequencial e usa o nome do arquivo como chave; nomes repetidos sobrescrevem resultados.
 - `collect_files()` não é recursivo.
 - PDF não executa OCR local: páginas consideradas escaneadas são renderizadas e delegadas ao provider multimodal. Imagens incorporadas podem repetir recursos por `xref`.
@@ -88,9 +110,8 @@ Assim, “implementado” não implica cobertura integral: os 228 testes exercit
 - Sessões persistem `input_path`, mensagens e resumo, mas não o conteúdo dos documentos; a restauração requer que o chamador recarregue e forneça os documentos. Não há versionamento/migração do JSON nem API única de “carregar sessão completa”.
 - A troca de provider preserva contexto porque o contexto é texto local reenviado, não porque IDs/estado remoto sejam migrados.
 - Dentro do repositório existe uma aplicação versionada, mas ainda não há entry
-  point de console empacotado, tratamento transversal de retry/timeout/rate
-  limit, cobertura automatizada integral ou documentação de uso no `README.md`
-  (atualmente vazio).
+  point de console empacotado, cobertura automatizada integral ou documentação
+  de uso no `README.md` (atualmente vazio).
 
 ## Decisões arquiteturais importantes
 
@@ -110,12 +131,23 @@ Assim, “implementado” não implica cobertura integral: os 228 testes exercit
   pretensão de congelá-la permanentemente. `confirm_preflight` não integra
   `ai_engine.__all__`: a versão de `ai_engine.limits` permanece somente para
   compatibilidade, enquanto a interação humana pertence à aplicação.
+- As configurações atuais são `AI_PROVIDER_TIMEOUT_SECONDS=300`,
+  `AI_PROVIDER_MAX_RETRIES=2`, `AI_PROVIDER_RETRY_BASE_DELAY_SECONDS=1` e
+  `AI_PROVIDER_RETRY_MAX_DELAY_SECONDS=10`. OpenAI e Anthropic fazem no máximo
+  três tentativas totais por padrão. O retry depende exclusivamente de
+  `ProviderError.retryable=True`; `Retry-After` estruturado tem prioridade e
+  frases como `Please retry in 34.58s` não são interpretadas.
+- `log_usage()` ocorre somente depois de uma resposta remota válida e fora da
+  política de retry. Assim, falha no CSV não repete a chamada ao provider.
+- `chat()` altera o histórico somente depois de resposta válida. Uma falha
+  definitiva não cria turno fictício; na compactação, uma falha anterior a
+  `apply_summary()` preserva resumo, pendências e sessão existentes.
 
 ## Próxima etapa: robustez e organização
 
-1. Organizar e continuar expandindo a suíte offline a partir dos 228 testes atuais, priorizando contratos ainda não cobertos e manutenção clara entre camadas.
-2. Centralizar retry, timeout e tratamento de rate limit sem alterar os
-   contratos públicos atuais.
+1. Organizar e continuar expandindo a suíte offline a partir dos 410 testes atuais, priorizando contratos ainda não cobertos e manutenção clara entre camadas.
+2. Revisar futuramente o retry do Gemini quando `interactions` expuser controle
+   público confiável, sem acoplamento adicional a `_gaos`.
 3. Unificar a configuração de modelos e parâmetros dos providers e tornar o
    carregamento de `.env` uniforme e explícito.
 4. Migrar gradualmente scripts auxiliares/legados para a configuração central,

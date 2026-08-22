@@ -196,6 +196,9 @@ ai_engine.chat/workflow
           |
           v
 providers: Gemini | OpenAI | Anthropic
+  |-- erros dos SDKs -> ProviderError comum
+  |-- OpenAI/Anthropic: retry do engine após normalização
+  |-- Gemini: retry nativo de interactions
   |                         |
   |                         +--> 6_Dados\usage\api_usage.csv
   v
@@ -236,8 +239,9 @@ reconstruído e reenviado.
 - apresentação da resposta;
 - execução dos arquivos pedidos em respostas estruturadas;
 - resumo do consumo registrado em cada operação;
-- tratamento básico de falhas, incluindo identificação textual de erros de
-  quota ou rate limit.
+- tratamento humano estruturado de falhas por `format_error_for_user()`, usando
+  tipos e metadata comuns sem interpretar `429`, `quota` ou `rate limit` no
+  texto da exceção. `details` não é impresso automaticamente.
 
 A interface não implementa readers, adapters de provider ou exporters. Ela os
 coordena por meio da API pública raiz de `ai_engine`, usando exclusivamente um
@@ -275,7 +279,10 @@ A fronteira pública inicial está estabilizada para a aplicação atual.
 `ai_engine.usage` ou `ai_engine.workflow`.
 
 Os tipos públicos de domínio/configuração incluem `OperationalPaths`,
-`PreflightReport` e `StructuredResult`. As operações públicas adicionais
+`PreflightReport` e `StructuredResult`. O contrato público de falhas inclui
+`ProviderError`, `ProviderRateLimitError`, `ProviderTimeoutError`,
+`ProviderConnectionError` e `ProviderRequestError`; o parser de Retry-After
+permanece interno. As operações públicas adicionais
 consumidas pela aplicação são `get_paths()`, `load_documents()`,
 `analyze_documents()`, `format_preflight()`, `build_summary_prompt()`,
 `summarize_session()`, `execute_structured_result()`, `get_usage_totals()`,
@@ -291,6 +298,30 @@ Testes de contrato verificam os reexports por identidade, preservam os imports
 antigos dos módulos de origem e validam importação sem ciclos, sem iniciar a
 aplicação e sem chamadas externas. A superfície pode evoluir de forma
 compatível; não está declarada como congelada permanentemente.
+
+Os três adapters normalizam erros dos SDKs e preservam a causa original com
+`raise ... from exc`. A aplicação não importa exceções de OpenAI, Anthropic,
+Gemini ou `_gaos`. Em falha definitiva, `chat()` não adiciona usuário nem
+assistente ao histórico; na compactação, a atualização do resumo só ocorre
+depois de resposta válida, preservando o estado anterior em falha.
+
+A configuração operacional de robustez é lida dinamicamente do ambiente:
+`AI_PROVIDER_TIMEOUT_SECONDS=300`, `AI_PROVIDER_MAX_RETRIES=2`,
+`AI_PROVIDER_RETRY_BASE_DELAY_SECONDS=1` e
+`AI_PROVIDER_RETRY_MAX_DELAY_SECONDS=10`. OpenAI e Anthropic usam
+`max_retries=0` nos SDKs e o helper interno `retry_provider_call()`, totalizando
+por padrão no máximo três tentativas. Apenas `retryable=True` autoriza retry;
+Retry-After estruturado prevalece, sem parsing de frases textuais.
+
+`log_usage()` permanece depois do sucesso remoto e fora do retry. Falha ao
+gravar usage não repete a operação do provider.
+
+O Gemini é a exceção atual: `google-genai 2.18.1` implementa
+`interactions.create()` por `_gaos`; timeout chega via `HttpOptions` em
+milissegundos, mas os retries nativos não puderam ser zerados por API pública
+confiável. Por isso o retry do engine não é conectado ao Gemini. O SDK mantém
+seu retry nativo, sem monkeypatch ou alteração de `_gaos`, e os tipos privados
+ficam confinados ao adapter/teste Gemini.
 
 ## Inventário resumido de `0_Scripts`
 
@@ -412,7 +443,7 @@ e um contrato explícito com a aplicação.
 Nenhum arquivo precisa ser movido para iniciar a evolução arquitetural. A
 ordem segura é:
 
-1. preservar como baseline os 228 testes offline e o comportamento de
+1. preservar como baseline os 410 testes offline e o comportamento de
    `application\ia_interativa.py`;
 2. documentar o comando e o ambiente usados para tornar `ai_engine` importável
    pelos scripts externos;
@@ -434,11 +465,11 @@ ordem segura é:
 10. revisar separadamente a política de armazenamento de configurações,
     secrets e dados pessoais, sem incorporar seus valores à documentação.
 
-Continuam como dívidas técnicas prioritárias: retry, timeout e rate limit
-centralizados; configuração comum de modelos e parâmetros dos providers;
-validação mais forte de structured outputs; versionamento e migração de
-sessões; carregamento uniforme de `.env`; documentação de instalação e uso no
-`README.md`; e migração dos scripts auxiliares e legados.
+Continuam como dívidas técnicas prioritárias: eventual revisão do retry Gemini
+quando o SDK expuser controle público confiável; configuração uniforme de
+`.env`, modelos e parâmetros dos providers; validação mais forte de structured
+outputs; versionamento e migração de sessões; documentação de instalação e uso
+no `README.md`; e migração dos scripts auxiliares e legados.
 
 Essa sequência mantém a estrutura atual válida enquanto reduz o acoplamento
 antes de qualquer movimentação física de arquivos.

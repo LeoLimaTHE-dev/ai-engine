@@ -10,14 +10,14 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Configuração | `config.py`, `paths.py` | Localiza o `.env` do projeto e representa, separadamente, os paths operacionais. |
 | Modelo de entrada | `models/document.py` | Representação comum de documentos, imagens e tabelas. |
 | Ingestão | `readers/` | Converte arquivos suportados em `DocumentContent`. |
-| Providers | `providers/` | Chamadas diretas aos SDKs Gemini, OpenAI e Anthropic. |
+| Providers | `providers/` | Adapters dos SDKs, contrato comum de erros e retry controlado pelo engine onde o SDK permite desativar retries nativos. |
 | Multimodal | `multimodal.py`, `images.py` | Roteia documentos e normaliza imagens. |
 | Orquestração | `batch.py`, `workflow.py`, `prompts.py` | Coleta, leitura, prompt, modo individual/consolidado e workflow. |
 | Saídas | `results.py`, `structured.py`, `actions_prompt.py`, `actions.py`, `exporters/` | Contrato de resposta, parsing, execução e gravação de arquivos. |
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 228 testes, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 410 testes, sem chamadas reais a providers. |
 | Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
 
 ## API pública raiz
@@ -32,6 +32,12 @@ sessões, o contrato inclui os tipos `OperationalPaths`, `PreflightReport` e
 - `build_summary_prompt()` e `summarize_session()`;
 - `execute_structured_result()`;
 - `get_usage_totals()`, `usage_difference()` e `format_usage_summary()`.
+
+O contrato público também inclui `ProviderError`,
+`ProviderRateLimitError`, `ProviderTimeoutError`,
+`ProviderConnectionError` e `ProviderRequestError`. O helper
+`parse_retry_after_seconds()` e `retry_provider_call()` continuam internos e
+não integram `ai_engine.__all__`.
 
 `application/ia_interativa.py` importa esses serviços somente com
 `from ai_engine import (...)`. Ela não importa diretamente `ai_engine.actions`,
@@ -99,6 +105,39 @@ Os adaptadores criam um cliente a cada chamada, leem o modelo do ambiente e usam
 
 Aliases são `google` para Gemini e `anthropic`/`claude` para Anthropic. Os adaptadores não mantêm thread remota nem ID de conversa.
 
+### Erros, timeout e retry dos providers
+
+`ai_engine.providers.errors` define o contrato comum `ProviderError` e as
+subclasses de rate limit, timeout, conexão e request. Todos os adapters
+normalizam erros conhecidos de seus SDKs para esses tipos, transportando
+`provider`, mensagem, status, código, `retry_after_seconds`, `retryable` e
+detalhes quando disponíveis. A exceção original permanece em `__cause__` por
+meio de `raise ... from exc`. Conhecimento de classes privadas `_gaos` não sai
+do adapter/testes Gemini nem alcança a API comum.
+
+As configurações são consultadas do ambiente no momento de cada operação:
+
+| Variável | Default | Regra |
+|---|---:|---|
+| `AI_PROVIDER_TIMEOUT_SECONDS` | `300` | Número positivo e finito. |
+| `AI_PROVIDER_MAX_RETRIES` | `2` | Inteiro maior ou igual a zero; conta retries depois da tentativa inicial. |
+| `AI_PROVIDER_RETRY_BASE_DELAY_SECONDS` | `1` | Número finito maior ou igual a zero. |
+| `AI_PROVIDER_RETRY_MAX_DELAY_SECONDS` | `10` | Número finito maior ou igual a zero. |
+
+OpenAI e Anthropic recebem timeout em segundos e `max_retries=0` no client.
+Suas chamadas remotas normalizadas passam por `retry_provider_call()` e, com o
+default, podem fazer uma tentativa inicial mais dois retries. Somente
+`ProviderError.retryable=True` autoriza repetição. `Retry-After` estruturado
+tem prioridade sobre o backoff exponencial e ambos respeitam o atraso máximo;
+mensagens como `Please retry in 34.58s` não são analisadas.
+
+No Gemini, o timeout em segundos é convertido para milissegundos em
+`HttpOptions`. A versão instalada `google-genai 2.18.1` implementa
+`interactions.create()` pelo caminho privado `_gaos`, cujos retries não puderam
+ser zerados de forma pública e confiável. Portanto, Gemini continua com o retry
+nativo do SDK e não chama `retry_provider_call()`. Não há monkeypatch nem
+alteração de `_gaos`.
+
 ## Multimodal
 
 `ask_document()` seleciona o adaptador. Antes do envio, cada imagem passa por `normalize_image()`: JPEG é regravado como JPEG; os demais formatos são regravados como PNG; erro de decodificação vira `ValueError`.
@@ -149,13 +188,13 @@ nem `ai_engine.__all__`.
 
 ## Usage tracking
 
-Cada adaptador registra usage após a chamada. `UsageRecord` comporta input, output, total, thought e cached tokens. `log_usage()` acrescenta uma linha a `get_paths().usage_dir / "api_usage.csv"` quando não recebe arquivo explícito. Há funções para somar o CSV, calcular deltas e formatar resumo. Gemini preenche thought/cached quando disponíveis; os demais registram campos básicos.
+Cada adaptador registra usage após uma resposta remota válida. `UsageRecord` comporta input, output, total, thought e cached tokens. `log_usage()` acrescenta uma linha a `get_paths().usage_dir / "api_usage.csv"` quando não recebe arquivo explícito. Há funções para somar o CSV, calcular deltas e formatar resumo. Gemini preenche thought/cached quando disponíveis; os demais registram campos básicos. O logging fica fora da normalização e do retry: se a escrita do CSV falhar, a chamada remota bem-sucedida não é repetida.
 
 ## Chat contínuo e memória compactada
 
-`ConversationSession` guarda provider, documentos, mensagens recentes, resumo e `pending_summary`. `chat()` monta prompt com resumo/histórico/pedido, executa workflow estruturado nos documentos e adiciona usuário e `result.message` ao histórico. A continuidade vem do reenvio do contexto local, não de estado remoto.
+`ConversationSession` guarda provider, documentos, mensagens recentes, resumo e `pending_summary`. `chat()` monta prompt com resumo/histórico/pedido, executa workflow estruturado nos documentos e só então adiciona usuário e `result.message` ao histórico. Uma falha definitiva de provider não cria turno fictício. A continuidade vem do reenvio do contexto local, não de estado remoto.
 
-Acima de `max_history_messages` (10), mensagens antigas migram para `pending_summary`. Ao atingir `summary_batch_size` (4), `summarize_session()` pode fazer uma chamada textual separada combinando resumo anterior e pendências; depois substitui o resumo e limpa a fila.
+Acima de `max_history_messages` (10), mensagens antigas migram para `pending_summary`. Ao atingir `summary_batch_size` (4), `summarize_session()` pode fazer uma chamada textual separada combinando resumo anterior e pendências; somente depois de sucesso substitui o resumo e limpa a fila. Falha na compactação preserva o resumo, as pendências e a sessão anteriores.
 
 A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensagens pendentes não entram no prompt conversacional.
 
@@ -171,7 +210,7 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Testes automatizados offline
 
-A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 228 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 410 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
 - batch, workflow e prompts;
@@ -182,6 +221,8 @@ A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir 
 - API pública raiz, identidade dos reexports, ausência de ciclos e separação
   entre cálculo de preflight e confirmação humana;
 - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
+- contrato comum de erros, preservação de `__cause__`, timeout, retry/backoff,
+  Retry-After, fronteira de usage e tratamento estruturado na aplicação.
 
 Os adapters são testados sem credenciais ou rede: os testes verificam roteamento, payload básico, logging de usage e retorno textual contra clientes falsos. Isso não valida a integração real com os serviços.
 
