@@ -240,7 +240,8 @@ reconstruído e reenviado.
   quota ou rate limit.
 
 A interface não implementa readers, adapters de provider ou exporters. Ela os
-coordena por meio de `ai_engine`.
+coordena por meio da API pública raiz de `ai_engine`, usando exclusivamente um
+bloco `from ai_engine import (...)`.
 
 `0_Scripts\ia_interativa.py` não implementa nenhuma dessas responsabilidades.
 Seu único papel é permitir que o comando histórico continue funcionando:
@@ -268,20 +269,28 @@ ai_engine
   não deve decidir: menus, confirmação automática, pasta de entrada ou destino
 ```
 
-Na implementação atual, a fronteira pública ainda não está completa.
-`application\ia_interativa.py` usa tanto símbolos reexportados por `ai_engine.__init__`
-quanto módulos internos:
+A fronteira pública inicial está estabilizada para a aplicação atual.
+`application\ia_interativa.py` não depende diretamente de
+`ai_engine.actions`, `ai_engine.chat`, `ai_engine.limits`, `ai_engine.paths`,
+`ai_engine.usage` ou `ai_engine.workflow`.
 
-- `ai_engine.actions`;
-- `ai_engine.chat`;
-- `ai_engine.limits`;
-- `ai_engine.usage`;
-- `ai_engine.workflow`.
+Os tipos públicos de domínio/configuração incluem `OperationalPaths`,
+`PreflightReport` e `StructuredResult`. As operações públicas adicionais
+consumidas pela aplicação são `get_paths()`, `load_documents()`,
+`analyze_documents()`, `format_preflight()`, `build_summary_prompt()`,
+`summarize_session()`, `execute_structured_result()`, `get_usage_totals()`,
+`usage_difference()` e `format_usage_summary()`.
 
-Isso não impede o funcionamento atual, mas acopla a aplicação à organização
-interna do pacote. O preflight permanecer na interface é uma decisão coerente:
-o engine calcula o relatório, enquanto a camada humana decide se autoriza a
-chamada.
+No preflight, o engine calcula e formata o `PreflightReport`. A aplicação
+apresenta o relatório e pede autorização ao usuário por meio de
+`confirm_preflight_interactively()`. A função histórica
+`ai_engine.limits.confirm_preflight()` continua disponível para consumidores
+antigos, mas não faz parte de `ai_engine.__all__` nem da API pública raiz.
+
+Testes de contrato verificam os reexports por identidade, preservam os imports
+antigos dos módulos de origem e validam importação sem ciclos, sem iniciar a
+aplicação e sem chamadas externas. A superfície pode evoluir de forma
+compatível; não está declarada como congelada permanentemente.
 
 ## Inventário resumido de `0_Scripts`
 
@@ -375,8 +384,6 @@ Não há dependência de código identificada para `1_Projetos`, `5_Modelos` ou
 - scripts auxiliares e legados ainda possuem paths absolutos próprios;
 - a interface principal concentra menus, coordenação, persistência,
   telemetria, tratamento de erros e actions em um único arquivo;
-- a interface importa módulos internos em vez de depender apenas de uma API
-  pública estável;
 - vários scripts executam trabalho no topo do módulo e não são componentes
   seguros para importação como biblioteca;
 - sessões não têm versionamento de schema e dependem de caminhos externos;
@@ -405,7 +412,7 @@ e um contrato explícito com a aplicação.
 Nenhum arquivo precisa ser movido para iniciar a evolução arquitetural. A
 ordem segura é:
 
-1. preservar como baseline os 210 testes offline e o comportamento de
+1. preservar como baseline os 228 testes offline e o comportamento de
    `application\ia_interativa.py`;
 2. documentar o comando e o ambiente usados para tornar `ai_engine` importável
    pelos scripts externos;
@@ -413,8 +420,8 @@ ordem segura é:
    externo sem lógica de negócio;
 4. migrar gradualmente ferramentas e scripts legados para `ai_engine.paths`,
    mantendo os mesmos defaults de `C:\IA`;
-5. estabilizar uma API pública que cubra os serviços usados pela interface,
-   reduzindo imports de módulos internos;
+5. manter compatível a API pública já estabilizada para a aplicação atual e
+   expandi-la somente quando houver contrato e testes claros;
 6. separar gradualmente as responsabilidades internas da interface, mantendo
    seu ponto de entrada e comportamento observável;
 7. permitir configuração compatível de prompts, sessions e usage antes de
@@ -426,6 +433,12 @@ ordem segura é:
    participam do fluxo atual;
 10. revisar separadamente a política de armazenamento de configurações,
     secrets e dados pessoais, sem incorporar seus valores à documentação.
+
+Continuam como dívidas técnicas prioritárias: retry, timeout e rate limit
+centralizados; configuração comum de modelos e parâmetros dos providers;
+validação mais forte de structured outputs; versionamento e migração de
+sessões; carregamento uniforme de `.env`; documentação de instalação e uso no
+`README.md`; e migração dos scripts auxiliares e legados.
 
 Essa sequência mantém a estrutura atual válida enquanto reduz o acoplamento
 antes de qualquer movimentação física de arquivos.

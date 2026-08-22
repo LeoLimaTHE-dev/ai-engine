@@ -37,28 +37,40 @@ O `ai-engine` é uma biblioteca Python local para ler documentos, enviá-los a G
   momento da chamada; argumentos explícitos continuam prevalecendo.
 - Aplicação interativa oficial versionada em `application/ia_interativa.py`,
   com launcher local fino em `C:\IA\0_Scripts\ia_interativa.py`.
+- Fronteira pública estabilizada para a aplicação atual: a interface consome
+  serviços exclusivamente por `from ai_engine import (...)`, sem depender da
+  organização dos submódulos internos.
+- Contrato público explícito para `OperationalPaths`, `PreflightReport` e
+  `StructuredResult`, além das operações de paths, ingestão, preflight,
+  compactação, actions e consulta de usage usadas pela aplicação.
 - Suíte automatizada offline com pytest cobrindo models/readers; batch/workflow/prompts; structured outputs/actions/exporters; limits/usage; chat/memória/sessões; e routing/multimodal/images/adapters de providers com clientes mockados.
 
 ## Validação existente
 
 - Os arquivos Python de `src/` e `tests/` foram analisados pelo parser AST na revisão de 22/08/2026 sem erro de sintaxe.
-- A coleta padrão do pytest está restrita por `pyproject.toml` a arquivos `test_*_offline.py`; `uv run pytest` executa atualmente os 210 testes da suíte offline, todos passando. A cobertura automatizada inclui:
+- A coleta padrão do pytest está restrita por `pyproject.toml` a arquivos `test_*_offline.py`; `uv run pytest` executa atualmente os 228 testes da suíte offline, todos passando. A cobertura automatizada inclui:
   - models e readers, com fixtures locais para texto, formatos tabulares, DOCX, PDF e imagens;
   - batch, workflow e prompts;
   - structured outputs, actions e exporters;
   - limits/preflight e usage tracking;
   - chat, memória compactada e sessões persistentes;
   - configuração de paths, consumidores internos e defaults da aplicação;
+  - contrato da API pública, identidade dos reexports, importação sem ciclos e
+    ausência de instanciação de clients ou chamadas externas durante import;
+  - equivalência entre a confirmação humana local da aplicação e a função
+    legada de preflight;
   - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
 - Os quatro smoke tests reais foram movidos para `tests/smoke/` e usam nomes fora do padrão de coleta automática. Todos protegem a execução em `if __name__ == "__main__":`; importá-los não dispara chamadas de rede, e eles não são executados pela coleta padrão.
 - `tests/smoke/smoke_ai_engine.py` cobre manualmente o caminho público `ai_engine.ask_ai()`; os outros módulos smoke exercitam diretamente OpenAI, Gemini e Anthropic.
 - Os smoke tests reais de provider não fazem parte da suíte offline e não foram executados nesta revisão, para não consumir APIs. A cobertura dos adapters na suíte automatizada valida payloads, roteamento, usage e retornos com mocks; ela não valida credenciais, rede, disponibilidade, modelos ou comportamento real dos serviços externos.
 
-Assim, “implementado” não implica cobertura integral: os 210 testes exercitam os contratos listados acima, mas não todos os caminhos possíveis do engine. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
+Assim, “implementado” não implica cobertura integral: os 228 testes exercitam os contratos listados acima, mas não todos os caminhos possíveis do engine. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
 
 ## Limitações e pendências conhecidas
 
-- Preflight e confirmação existem, mas não são chamados pelos workflows nem pelo chat; a exigência de confirmação depende de uma interface externa.
+- Preflight não é chamado automaticamente pelos workflows nem pelo chat. O
+  engine calcula e formata `PreflightReport`; a aplicação oficial apresenta o
+  relatório e solicita autorização por `confirm_preflight_interactively()`.
 - Outputs estruturados são orientados apenas por prompt e `json.loads`; não há schema imposto ao provider, validação forte, remoção de cercas Markdown ou garantia de campos obrigatórios. A criação de arquivos exige chamada explícita a `execute_structured_result()`.
 - Scripts auxiliares e legados externos ainda possuem paths próprios e não
   foram todos migrados para `ai_engine.paths`.
@@ -94,12 +106,21 @@ Assim, “implementado” não implica cobertura integral: os 210 testes exercit
   localização de `api`.
 - A implementação oficial da interface reside em `application/ia_interativa.py`;
   o script externo apenas delega sua execução com `runpy.run_path()`.
+- A API raiz está estabilizada para as necessidades da aplicação atual, sem a
+  pretensão de congelá-la permanentemente. `confirm_preflight` não integra
+  `ai_engine.__all__`: a versão de `ai_engine.limits` permanece somente para
+  compatibilidade, enquanto a interação humana pertence à aplicação.
 
 ## Próxima etapa: robustez e organização
 
-1. Organizar e continuar expandindo a suíte offline a partir dos 210 testes atuais, priorizando contratos ainda não cobertos e manutenção clara entre camadas.
-2. Integrar preflight de modo explícito aos fluxos de alto nível, mantendo confirmação na camada de interface.
-3. Migrar gradualmente scripts auxiliares/legados para a configuração central,
+1. Organizar e continuar expandindo a suíte offline a partir dos 228 testes atuais, priorizando contratos ainda não cobertos e manutenção clara entre camadas.
+2. Centralizar retry, timeout e tratamento de rate limit sem alterar os
+   contratos públicos atuais.
+3. Unificar a configuração de modelos e parâmetros dos providers e tornar o
+   carregamento de `.env` uniforme e explícito.
+4. Migrar gradualmente scripts auxiliares/legados para a configuração central,
    sem mover dados e sem misturar paths operacionais com importação do pacote.
-4. Definir contratos e validação mais fortes para respostas estruturadas e sessões persistidas.
-5. Documentar uma API pública estável e exemplos no `README.md` antes de adicionar novas funcionalidades.
+5. Adicionar validação mais forte para structured outputs e
+   versionamento/migração para sessões persistidas.
+6. Documentar no `README.md` o fluxo de instalação, execução e uso da API
+   pública estabilizada para a aplicação atual.

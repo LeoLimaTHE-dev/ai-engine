@@ -6,7 +6,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 
 | Área | Módulos | Responsabilidade atual |
 |---|---|---|
-| API pública | `__init__.py` | Reexporta roteamento, multimodal, batch, workflows, chat e sessões. |
+| API pública | `__init__.py` | Define e reexporta explicitamente os contratos usados pela aplicação, além de roteamento, multimodal, batch, workflows, chat e sessões. |
 | Configuração | `config.py`, `paths.py` | Localiza o `.env` do projeto e representa, separadamente, os paths operacionais. |
 | Modelo de entrada | `models/document.py` | Representação comum de documentos, imagens e tabelas. |
 | Ingestão | `readers/` | Converte arquivos suportados em `DocumentContent`. |
@@ -17,8 +17,31 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 210 testes, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 228 testes, sem chamadas reais a providers. |
 | Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
+
+## API pública raiz
+
+`ai_engine.__init__` é a fronteira suportada pela aplicação oficial. Além dos
+18 símbolos já públicos de roteamento, documentos, batch, workflows, chat e
+sessões, o contrato inclui os tipos `OperationalPaths`, `PreflightReport` e
+`StructuredResult` e as operações:
+
+- `get_paths()` e `load_documents()`;
+- `analyze_documents()` e `format_preflight()`;
+- `build_summary_prompt()` e `summarize_session()`;
+- `execute_structured_result()`;
+- `get_usage_totals()`, `usage_difference()` e `format_usage_summary()`.
+
+`application/ia_interativa.py` importa esses serviços somente com
+`from ai_engine import (...)`. Ela não importa diretamente `ai_engine.actions`,
+`ai_engine.chat`, `ai_engine.limits`, `ai_engine.paths`, `ai_engine.usage` ou
+`ai_engine.workflow`.
+
+Essa superfície está estabilizada para a aplicação atual, mas pode evoluir de
+forma compatível. Testes de contrato verificam presença em `__all__`, identidade
+com os objetos dos módulos de origem, compatibilidade dos imports antigos,
+ausência de ciclos e ausência de clients ou chamadas externas durante import.
 
 ## Paths operacionais
 
@@ -114,7 +137,15 @@ Os equivalentes estruturados acrescentam o contrato textual de outputs e convert
 
 `analyze_documents()` produz `PreflightReport` com arquivos, caracteres, tokens estimados por `ceil(caracteres/4)`, imagens e bytes. O ambiente controla `AI_WARN_ESTIMATED_TEXT_TOKENS`, `AI_MAX_ESTIMATED_TEXT_TOKENS`, `AI_WARN_IMAGES`, `AI_MAX_IMAGES`, `AI_WARN_IMAGE_MB`, `AI_MAX_IMAGE_MB` e `AI_MAX_BATCH_FILES`.
 
-`confirm_preflight()` permite ultrapassar máximos com `CONFIRMAR`; nos demais casos aceita `s`, `sim`, `y` ou `yes`. Preflight não está conectado automaticamente a workflow ou chat.
+O engine calcula o relatório com `analyze_documents()` e o converte em texto
+com `format_preflight()`. A aplicação o apresenta e pede autorização em
+`confirm_preflight_interactively()`: acima dos máximos exige `CONFIRMAR`; nos
+demais casos aceita `s`, `sim`, `y` ou `yes`. Preflight não está conectado
+automaticamente a workflow ou chat.
+
+`ai_engine.limits.confirm_preflight()` mantém a política interativa antiga para
+compatibilidade com consumidores existentes, mas não integra a API pública raiz
+nem `ai_engine.__all__`.
 
 ## Usage tracking
 
@@ -140,7 +171,7 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Testes automatizados offline
 
-A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 210 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 228 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
 - batch, workflow e prompts;
@@ -148,6 +179,8 @@ A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir 
 - limits/preflight e usage tracking;
 - chat, memória compactada e sessões persistentes;
 - paths operacionais, resolução dinâmica e defaults da aplicação;
+- API pública raiz, identidade dos reexports, ausência de ciclos e separação
+  entre cálculo de preflight e confirmação humana;
 - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
 
 Os adapters são testados sem credenciais ou rede: os testes verificam roteamento, payload básico, logging de usage e retorno textual contra clientes falsos. Isso não valida a integração real com os serviços.
