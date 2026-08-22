@@ -6,6 +6,8 @@ from ai_engine.session import (
     ConversationSession,
 )
 
+from .paths import get_paths
+
 DEFAULT_SESSIONS_DIR = Path(r"C:\IA\6_Dados\sessions")
 
 
@@ -26,8 +28,11 @@ def sanitize_session_name(
 
 def get_session_path(
     name: str,
-    sessions_dir: str | Path = DEFAULT_SESSIONS_DIR,
+    sessions_dir: str | Path | None = None,
 ) -> Path:
+    if sessions_dir is None:
+        sessions_dir = get_paths().sessions_dir
+
     sessions_dir = Path(sessions_dir)
 
     safe_name = sanitize_session_name(name)
@@ -39,7 +44,7 @@ def save_session(
     name: str,
     session: ConversationSession,
     input_path: str | Path,
-    sessions_dir: str | Path = DEFAULT_SESSIONS_DIR,
+    sessions_dir: str | Path | None = None,
 ) -> Path:
     path = get_session_path(
         name=name,
@@ -88,7 +93,7 @@ def save_session(
 
 def load_session_data(
     name: str,
-    sessions_dir: str | Path = DEFAULT_SESSIONS_DIR,
+    sessions_dir: str | Path | None = None,
 ) -> dict:
     path = get_session_path(
         name=name,
@@ -102,8 +107,11 @@ def load_session_data(
 
 
 def list_sessions(
-    sessions_dir: str | Path = DEFAULT_SESSIONS_DIR,
+    sessions_dir: str | Path | None = None,
 ) -> list[str]:
+    if sessions_dir is None:
+        sessions_dir = get_paths().sessions_dir
+
     sessions_dir = Path(sessions_dir)
 
     if not sessions_dir.exists():
@@ -118,7 +126,7 @@ def list_sessions(
 
 def delete_session(
     name: str,
-    sessions_dir: str | Path = DEFAULT_SESSIONS_DIR,
+    sessions_dir: str | Path | None = None,
 ) -> bool:
     path = get_session_path(
         name=name,

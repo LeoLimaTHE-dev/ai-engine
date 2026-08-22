@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .paths import get_paths
+
 DEFAULT_USAGE_DIR = Path(r"C:\IA\6_Dados\usage")
 
 DEFAULT_USAGE_FILE = DEFAULT_USAGE_DIR / "api_usage.csv"
@@ -25,8 +27,11 @@ class UsageRecord:
 
 def log_usage(
     record: UsageRecord,
-    usage_file: str | Path = DEFAULT_USAGE_FILE,
+    usage_file: str | Path | None = None,
 ) -> Path:
+    if usage_file is None:
+        usage_file = get_paths().usage_dir / "api_usage.csv"
+
     path = Path(usage_file)
 
     path.parent.mkdir(
@@ -76,8 +81,11 @@ def log_usage(
 
 
 def get_usage_totals(
-    usage_file: str | Path = DEFAULT_USAGE_FILE,
+    usage_file: str | Path | None = None,
 ) -> dict[str, int]:
+    if usage_file is None:
+        usage_file = get_paths().usage_dir / "api_usage.csv"
+
     path = Path(usage_file)
 
     totals = {

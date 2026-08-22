@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from .paths import get_paths
+
 DEFAULT_PROMPTS_DIR = Path(r"C:\IA\4_Prompts")
 
 
@@ -11,7 +13,7 @@ SUPPORTED_PROMPT_EXTENSIONS = (
 
 def load_prompt(
     prompt: str | Path,
-    prompts_dir: str | Path = DEFAULT_PROMPTS_DIR,
+    prompts_dir: str | Path | None = None,
 ) -> str:
     """
     Loads a reusable prompt.
@@ -21,6 +23,9 @@ def load_prompt(
     - a file name, e.g. "analisar_documentos.md"
     - a complete file path
     """
+
+    if prompts_dir is None:
+        prompts_dir = get_paths().prompts_dir
 
     prompts_dir = Path(prompts_dir)
     prompt_path = Path(prompt)
