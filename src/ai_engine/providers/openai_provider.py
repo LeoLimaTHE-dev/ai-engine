@@ -1,7 +1,20 @@
 import base64
 import os
+from collections.abc import Callable
+from typing import TypeVar
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    OpenAI,
+    OpenAIError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
@@ -10,15 +23,117 @@ from ai_engine.usage import (
     log_usage,
 )
 
+from .errors import (
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderRequestError,
+    ProviderTimeoutError,
+    parse_retry_after_seconds,
+)
+
+
+ResultT = TypeVar("ResultT")
+
+
+def _openai_error_metadata(exc: OpenAIError) -> dict[str, object]:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+
+    retry_after_seconds = None
+
+    if headers is not None:
+        retry_after_seconds = parse_retry_after_seconds(
+            retry_after=headers.get("retry-after"),
+            retry_after_ms=headers.get("retry-after-ms"),
+        )
+
+    error_code = getattr(exc, "code", None)
+
+    if error_code is not None:
+        error_code = str(error_code)
+
+    return {
+        "provider": "openai",
+        "message": getattr(exc, "message", None) or str(exc) or "OpenAI request failed.",
+        "status_code": getattr(exc, "status_code", None),
+        "error_code": error_code,
+        "retry_after_seconds": retry_after_seconds,
+        "details": getattr(exc, "body", None),
+    }
+
+
+def _normalize_openai_error(exc: OpenAIError) -> ProviderError:
+    metadata = _openai_error_metadata(exc)
+
+    if isinstance(exc, RateLimitError):
+        retry_after_seconds = metadata["retry_after_seconds"]
+
+        return ProviderRateLimitError(
+            **metadata,
+            retryable=(
+                isinstance(retry_after_seconds, float) and retry_after_seconds > 0
+            ),
+        )
+
+    if isinstance(exc, APITimeoutError):
+        return ProviderTimeoutError(
+            **metadata,
+            retryable=True,
+        )
+
+    if isinstance(exc, APIConnectionError):
+        return ProviderConnectionError(
+            **metadata,
+            retryable=True,
+        )
+
+    status_code = metadata["status_code"]
+
+    if isinstance(status_code, int) and status_code >= 500:
+        return ProviderError(
+            **metadata,
+            retryable=True,
+        )
+
+    if isinstance(
+        exc,
+        (
+            AuthenticationError,
+            BadRequestError,
+            NotFoundError,
+            PermissionDeniedError,
+            APIStatusError,
+        ),
+    ):
+        return ProviderRequestError(
+            **metadata,
+            retryable=False,
+        )
+
+    return ProviderError(
+        **metadata,
+        retryable=False,
+    )
+
+
+def _call_openai(operation: Callable[[], ResultT]) -> ResultT:
+    try:
+        return operation()
+    except OpenAIError as exc:
+        raise _normalize_openai_error(exc) from exc
+
 
 def ask_openai(prompt: str) -> str:
     client = OpenAI()
 
     model = os.getenv("OPENAI_MODEL", "gpt-5")
 
-    response = client.responses.create(
-        model=model,
-        input=prompt,
+    response = _call_openai(
+        lambda: client.responses.create(
+            model=model,
+            input=prompt,
+        )
     )
 
     usage = response.usage
@@ -82,14 +197,16 @@ DOCUMENT CONTENT:
             }
         )
 
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "user",
-                "content": content,
-            }
-        ],
+    response = _call_openai(
+        lambda: client.responses.create(
+            model=model,
+            input=[
+                {
+                    "role": "user",
+                    "content": content,
+                }
+            ],
+        )
     )
     usage = response.usage
 
