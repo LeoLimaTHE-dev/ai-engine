@@ -1,7 +1,21 @@
 import base64
 import os
+from collections.abc import Callable
+from typing import TypeVar
 
 from google import genai
+from google.genai import errors as genai_errors
+from google.genai._gaos.lib.compat_errors import (
+    APIConnectionError as InteractionsAPIConnectionError,
+    APIStatusError as InteractionsAPIStatusError,
+    APITimeoutError as InteractionsAPITimeoutError,
+    AuthenticationError as InteractionsAuthenticationError,
+    BadRequestError as InteractionsBadRequestError,
+    GeminiNextGenAPIClientError as InteractionsError,
+    NotFoundError as InteractionsNotFoundError,
+    PermissionDeniedError as InteractionsPermissionDeniedError,
+    RateLimitError as InteractionsRateLimitError,
+)
 
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
@@ -10,15 +24,148 @@ from ai_engine.usage import (
     log_usage,
 )
 
+from .errors import (
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderRequestError,
+    ProviderTimeoutError,
+    parse_retry_after_seconds,
+)
+
+
+ResultT = TypeVar("ResultT")
+GeminiSDKError = InteractionsError | genai_errors.APIError
+
+
+def _structured_error_code(exc: GeminiSDKError, details: object) -> str | None:
+    status = getattr(exc, "status", None)
+
+    if status is not None:
+        return str(status)
+
+    if isinstance(details, dict):
+        error_details = details.get("error", details)
+
+        if isinstance(error_details, dict):
+            code = error_details.get("status") or error_details.get("code")
+
+            if code is not None:
+                return str(code)
+
+    code = getattr(exc, "code", None)
+
+    if code is not None:
+        return str(code)
+
+    return None
+
+
+def _gemini_error_metadata(exc: GeminiSDKError) -> dict[str, object]:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+
+    retry_after_seconds = None
+
+    if headers is not None:
+        retry_after_seconds = parse_retry_after_seconds(
+            retry_after=headers.get("retry-after"),
+            retry_after_ms=headers.get("retry-after-ms"),
+        )
+
+    details = getattr(exc, "body", None)
+
+    if details is None:
+        details = getattr(exc, "details", None)
+
+    status_code = getattr(exc, "status_code", None)
+
+    if status_code is None:
+        status_code = getattr(exc, "code", None)
+
+    return {
+        "provider": "gemini",
+        "message": (
+            getattr(exc, "message", None) or str(exc) or "Gemini request failed."
+        ),
+        "status_code": status_code if isinstance(status_code, int) else None,
+        "error_code": _structured_error_code(exc, details),
+        "retry_after_seconds": retry_after_seconds,
+        "details": details,
+    }
+
+
+def _normalize_gemini_error(exc: GeminiSDKError) -> ProviderError:
+    metadata = _gemini_error_metadata(exc)
+    status_code = metadata["status_code"]
+
+    if isinstance(exc, InteractionsRateLimitError) or status_code == 429:
+        retry_after_seconds = metadata["retry_after_seconds"]
+
+        return ProviderRateLimitError(
+            **metadata,
+            retryable=(
+                isinstance(retry_after_seconds, float) and retry_after_seconds > 0
+            ),
+        )
+
+    if isinstance(exc, InteractionsAPITimeoutError):
+        return ProviderTimeoutError(
+            **metadata,
+            retryable=True,
+        )
+
+    if isinstance(exc, InteractionsAPIConnectionError):
+        return ProviderConnectionError(
+            **metadata,
+            retryable=True,
+        )
+
+    if isinstance(status_code, int) and status_code >= 500:
+        return ProviderError(
+            **metadata,
+            retryable=True,
+        )
+
+    if isinstance(
+        exc,
+        (
+            InteractionsAuthenticationError,
+            InteractionsBadRequestError,
+            InteractionsNotFoundError,
+            InteractionsPermissionDeniedError,
+            InteractionsAPIStatusError,
+            genai_errors.ClientError,
+        ),
+    ):
+        return ProviderRequestError(
+            **metadata,
+            retryable=False,
+        )
+
+    return ProviderError(
+        **metadata,
+        retryable=False,
+    )
+
+
+def _call_gemini(operation: Callable[[], ResultT]) -> ResultT:
+    try:
+        return operation()
+    except (InteractionsError, genai_errors.APIError) as exc:
+        raise _normalize_gemini_error(exc) from exc
+
 
 def ask_gemini(prompt: str) -> str:
     client = genai.Client()
 
     model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
-    interaction = client.interactions.create(
-        model=model,
-        input=prompt,
+    interaction = _call_gemini(
+        lambda: client.interactions.create(
+            model=model,
+            input=prompt,
+        )
     )
 
     usage = interaction.usage
@@ -83,9 +230,11 @@ DOCUMENT CONTENT:
             }
         )
 
-    interaction = client.interactions.create(
-        model=model,
-        input=inputs,
+    interaction = _call_gemini(
+        lambda: client.interactions.create(
+            model=model,
+            input=inputs,
+        )
     )
 
     usage = interaction.usage
