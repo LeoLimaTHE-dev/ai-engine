@@ -54,13 +54,13 @@ def read_xlsx(
             if any(value.strip() for value in values):
                 rows.append(values)
 
-            tables.append(
-                DocumentTable(
-                    rows=rows,
-                    name=worksheet.title,
-                    source=worksheet.title,
-                )
+        tables.append(
+            DocumentTable(
+                rows=rows,
+                name=worksheet.title,
+                source=worksheet.title,
             )
+        )
 
         sheet_row_counts[worksheet.title] = len(rows)
 
