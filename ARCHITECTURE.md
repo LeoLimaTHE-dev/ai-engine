@@ -17,6 +17,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
+| Testes offline | `tests/test_*_offline.py` | Primeira base de regressão automatizada com pytest, sem chamadas reais a providers. |
 
 ## Modelo documental
 
@@ -24,7 +25,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 
 `DocumentContent` agrega `source_path`, texto extraído, listas de tabelas e imagens e metadados livres. Expõe propriedades de presença/conveniência e `to_text()`, que concatena texto e tabelas e acrescenta apenas a contagem das imagens.
 
-Essa é a fronteira comum do sistema. Readers produzem o objeto; batch o combina; preflight o mede; providers consomem sua forma textual e seus bytes de imagem. Atualmente, `to_text()` repete cada linha de tabela duas vezes, um defeito conhecido.
+Essa é a fronteira comum do sistema. Readers produzem o objeto; batch o combina; preflight o mede; providers consomem sua forma textual e seus bytes de imagem. `to_text()` inclui cada linha de tabela uma única vez.
 
 ## Readers e formatos
 
@@ -37,7 +38,7 @@ Essa é a fronteira comum do sistema. Readers produzem o objeto; batch o combina
 | CSV | `.csv` | Uma tabela; usa UTF-8 com BOM, tenta detectar dialeto nos primeiros 4096 caracteres e cai no dialeto padrão. |
 | Word | `.docx` | Parágrafos, tabelas e todos os itens sob `word/media/` no ZIP. |
 | PDF | `.pdf` | Texto por página e imagens incorporadas; páginas com menos de 30 caracteres são renderizadas em PNG a 150 dpi. Classifica como `empty`, `digital`, `scanned` ou `mixed`. Não faz OCR local. |
-| Excel | `.xlsx`, `.xlsm` | Valores calculados (`data_only=True`) como tabelas e metadados. A implementação atual cria tabelas parciais dentro do laço de linhas, defeito conhecido. |
+| Excel | `.xlsx`, `.xlsm` | Valores calculados (`data_only=True`) como uma tabela por worksheet e metadados; linhas totalmente vazias são ignoradas e worksheet vazia produz tabela com `rows=[]`. |
 | Imagem | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.gif`, `.tiff`, `.tif` | Uma `DocumentImage` com bytes e MIME inferido. |
 
 `workflow.collect_files()` aceita um arquivo ou apenas os filhos diretos de um diretório, filtra pelas mesmas extensões e ordena os caminhos.
@@ -115,6 +116,16 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 `save_session()` grava JSON com nome, provider, `input_path`, resumo, limites de memória, mensagens e pendências em `C:\IA\6_Dados\sessions` por padrão. Há listagem, leitura e remoção.
 
 `restore_conversation_session(data, documents)` exige documentos já carregados: o JSON guarda o caminho, não bytes ou `DocumentContent`. A camada chamadora precisa recarregar os documentos.
+
+## Testes automatizados offline
+
+Existe uma primeira base de regressão com pytest, composta por quatro testes que passam sem chamadas reais a APIs:
+
+- `tests/test_document_content_offline.py` verifica que a serialização textual inclui cada linha de tabela uma única vez;
+- `tests/test_xlsx_reader_offline.py` verifica uma `DocumentTable` por worksheet e a representação de worksheet vazia com `rows=[]`;
+- `tests/test_openai_provider_offline.py` usa monkeypatch para verificar que `ask_openai_document()` retorna `response.output_text` quando `response.usage` é `None`.
+
+Essa base cobre somente esses comportamentos. Ela não demonstra cobertura dos demais readers, dos outros caminhos dos providers, de multimodal com imagens, batch, workflows, outputs/actions, exporters, preflight/limits, usage tracking, chat, memória ou sessões.
 
 ## Fluxo completo de dados
 

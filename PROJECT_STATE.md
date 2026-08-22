@@ -26,21 +26,24 @@ O `ai-engine` é uma biblioteca Python local para ler documentos, enviá-los a G
 - Conversa contínua baseada em prompt reconstruído, histórico recente, fila de mensagens antigas e resumo compacto produzido por uma chamada separada.
 - Troca de provider com preservação opcional de histórico e normalização de aliases.
 - Persistência JSON de sessões, listagem, remoção, leitura e restauração com documentos recarregados externamente.
+- Primeira base automatizada de testes offline com pytest para regressões pontuais do modelo documental, reader XLSX e provider OpenAI multimodal.
 
 ## Validação existente
 
-- Os 42 arquivos Python de `src/` e `tests/` foram analisados pelo parser AST em 22/08/2026 sem erro de sintaxe.
+- Os 45 arquivos Python atuais de `src/` e `tests/` foram analisados pelo parser AST em 22/08/2026 sem erro de sintaxe.
+- Os quatro testes offline atuais passam com pytest:
+  - `test_to_text_includes_each_table_row_once`: serialização textual inclui cada linha de tabela uma única vez;
+  - `test_read_xlsx_produces_one_table_per_worksheet`: XLSX produz exatamente uma tabela por worksheet com conteúdo;
+  - `test_read_xlsx_represents_empty_worksheet_with_empty_table`: worksheet vazia é representada por uma tabela com `rows=[]`;
+  - `test_ask_openai_document_returns_output_text_without_usage`: o caminho multimodal OpenAI retorna `response.output_text` quando `usage` é `None`, usando mock e sem chamada real à API.
 - `tests/test_openai.py`, `tests/test_gemini.py` e `tests/test_anthropic.py` são scripts manuais de smoke test que fazem chamadas reais e imprimem a resposta. Não possuem assertions, mocks ou isolamento.
 - `tests/Providertest.py` contém uma chamada manual a `ask_ai`, mas não importa esse símbolo e não constitui teste executável isoladamente.
-- Nesta revisão, os smoke tests externos não foram executados para não consumir APIs. Não há evidência no repositório de uma suíte automatizada que valide readers, batch, workflows, outputs, limites, chat ou sessões.
+- Nesta revisão, os smoke tests externos não foram executados para não consumir APIs. A cobertura automatizada atual limita-se à serialização textual de tabela, leitura XLSX por worksheet e worksheet vazia, e retorno do provider OpenAI multimodal sem usage. Os demais readers, providers e fluxos de batch, workflow, outputs, limites, usage, chat e sessões ainda não possuem cobertura automatizada demonstrada no repositório.
 
-Assim, “implementado” acima significa presente no código e inspecionado; não significa coberto por testes automatizados. O histórico Git contém somente o commit `Initial working multi-provider AI engine`, mas isso não substitui testes reproduzíveis.
+Assim, salvo pelos quatro comportamentos listados acima, “implementado” significa presente no código e inspecionado, não coberto por testes automatizados. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
 
 ## Limitações e pendências conhecidas
 
-- `DocumentContent.to_text()` adiciona cada linha de tabela duas vezes.
-- `read_xlsx()` adiciona uma `DocumentTable` dentro do laço de linhas, gerando várias tabelas parciais por planilha; uma planilha vazia não gera tabela.
-- `ask_openai_document()` só retorna `response.output_text` dentro do ramo em que `response.usage` existe; sem usage, retorna `None` apesar da anotação `str`.
 - Preflight e confirmação existem, mas não são chamados pelos workflows nem pelo chat; a exigência de confirmação depende de uma interface externa.
 - Outputs estruturados são orientados apenas por prompt e `json.loads`; não há schema imposto ao provider, validação forte, remoção de cercas Markdown ou garantia de campos obrigatórios. A criação de arquivos exige chamada explícita a `execute_structured_result()`.
 - O caminho padrão de prompts, sessões e usage é absoluto e específico de Windows (`C:\IA\...`).
@@ -55,7 +58,7 @@ Assim, “implementado” acima significa presente no código e inspecionado; n�
 - A compactação não é automática em `chat()`: `summarize_session()` precisa ser coordenado externamente e gera uma chamada adicional. Até isso ocorrer, mensagens antigas ficam em `pending_summary` e não entram no prompt conversacional.
 - Sessões persistem `input_path`, mensagens e resumo, mas não o conteúdo dos documentos; a restauração requer que o chamador recarregue e forneça os documentos. Não há versionamento/migração do JSON nem API única de “carregar sessão completa”.
 - A troca de provider preserva contexto porque o contexto é texto local reenviado, não porque IDs/estado remoto sejam migrados.
-- Dentro do repositório `C:\IA\api`, não há CLI ou aplicação empacotada, tratamento transversal de retry/timeout/rate limit, testes automatizados ou documentação de uso no `README.md` (atualmente vazio). Esta constatação não abrange possíveis interfaces ou orquestrações existentes no restante do ambiente `C:\IA`.
+- Dentro do repositório `C:\IA\api`, não há CLI ou aplicação empacotada, tratamento transversal de retry/timeout/rate limit, cobertura automatizada ampla ou documentação de uso no `README.md` (atualmente vazio). Esta constatação não abrange possíveis interfaces ou orquestrações existentes no restante do ambiente `C:\IA`.
 
 ## Decisões arquiteturais importantes
 
@@ -69,8 +72,8 @@ Assim, “implementado” acima significa presente no código e inspecionado; n�
 
 ## Próxima etapa: robustez e organização
 
-1. Corrigir os defeitos confirmados em `to_text()`, `read_xlsx()` e `ask_openai_document()`.
-2. Criar testes unitários offline com fixtures e mocks para readers, serialização multimodal, roteamento, batch, structured outputs, exporters, preflight, usage, chat e sessões.
+1. Expandir a suíte unitária offline com fixtures e mocks para os demais readers, serialização multimodal, roteamento, batch, structured outputs, exporters, preflight, usage, chat e sessões.
+2. Organizar os testes manuais de provider para que não sejam coletados acidentalmente como testes automatizados nem façam chamadas externas sem intenção explícita.
 3. Integrar preflight de modo explícito aos fluxos de alto nível, mantendo confirmação na camada de interface.
 4. Centralizar configuração, caminhos, modelos e parâmetros de provider; remover defaults dependentes da máquina.
 5. Definir contratos e validação mais fortes para respostas estruturadas e sessões persistidas.
