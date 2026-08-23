@@ -1,158 +1,330 @@
 # Estado do projeto
 
-> Instrução para futuros agentes: leia este arquivo **e confira o código real e os testes atuais antes de fazer qualquer alteração**. Este documento é um mapa operacional, não substitui a implementação. Atualize-o quando o estado do projeto mudar.
+> Checkpoint documental de 23/08/2026. Futuros agentes devem conferir este
+> arquivo, o código e os testes atuais antes de alterar o projeto.
 
-## Escopo deste documento
+## Resumo operacional
 
-Este estado cobre o engine e a implementação versionada da aplicação em
-`C:\IA\api`. O ambiente completo também possui scripts e dados externos,
-descritos em `SYSTEM_ARCHITECTURE.md`. O arquivo
-`C:\IA\0_Scripts\ia_interativa.py` é atualmente apenas um launcher local para
-a aplicação versionada.
+O núcleo necessário para uma primeira versão local utilizável está
+majoritariamente implementado. O `ai-engine` lê documentos, conversa com
+Gemini, OpenAI ou Anthropic/Claude, mantém contexto local e gera arquivos por
+um contrato estruturado. Structured outputs funcionam end-to-end nos cinco
+formatos atualmente suportados: TXT, MD, DOCX, PDF e XLSX.
 
-## Objetivo atual
+O estado deste checkpoint foi comparado com a implementação e validado por
+`uv run pytest -q`: **706 testes automatizados offline passaram, 0 falharam**.
+Houve 1 `DeprecationWarning` originado em `google-genai`; ele não representa
+falha da suíte. Os testes manuais descritos abaixo são evidência separada e não
+estão incluídos nesses 706 testes.
 
-O `ai-engine` é uma biblioteca Python local para ler documentos, enviá-los a Gemini, OpenAI ou Claude, manter conversas com contexto e transformar respostas em arquivos locais. O próximo ciclo deve priorizar robustez e organização, sem ampliar recursos antes de estabilizar o que já existe.
+## Implementado no projeto
 
-## Implementado
+- Modelo comum de documentos com texto, tabelas, imagens e metadados.
+- Readers para TXT, Markdown, CSV, DOCX, PDF, XLSX/XLSM e formatos comuns de
+  imagem.
+- Integrações textuais e multimodais com Gemini, OpenAI e Anthropic/Claude.
+- Batch individual ou consolidado, workflows com prompt livre e template
+  opcional, preflight local, registro de usage e conversa com memória local.
+- Persistência de sessões e troca de provider com preservação opcional do
+  histórico.
+- Contrato comum para erros de provider e retry controlado pelo engine em
+  OpenAI/Anthropic; Gemini continua com o retry nativo do SDK.
+- Aplicação interativa oficial em `application/ia_interativa.py` e API pública
+  consumida pela raiz de `ai_engine`.
+- Pipeline de structured outputs com parsing em dois modos, validação,
+  planning completo anterior à escrita, execução e exporters.
 
-- Modelo comum de documento com texto, tabelas, imagens e metadados (`DocumentContent`, `DocumentTable` e `DocumentImage`).
-- Readers para TXT, Markdown, CSV, DOCX, PDF, XLSX/XLSM e imagens PNG, JPEG, WebP, BMP, GIF e TIFF.
-- Extração de texto, tabelas e imagens conforme o formato; páginas de PDF com menos de 30 caracteres são também renderizadas como PNG.
-- Integrações textuais e multimodais com Gemini, OpenAI e Anthropic/Claude, selecionadas por nome ou alias.
-- Normalização de imagens para JPEG ou PNG antes do envio multimodal.
-- Processamento de vários documentos em modo individual ou consolidado; modo `auto` escolhe individual para um documento e consolidado para dois ou mais.
-- Workflows com instrução livre e template opcional carregado de `.md` ou `.txt`.
-- Respostas estruturadas em JSON, parsing com fallback para texto, descrição de arquivos solicitados e execução separada dessas saídas.
-- Exportação para TXT, Markdown, DOCX, PDF e XLSX; XLSX aceita conteúdo linear ou tabelas em planilhas.
-- Análise preflight local de volume estimado, com avisos, limites configuráveis por ambiente e confirmação interativa.
-- Registro CSV de uso real informado pelos providers e funções de totalização/diferença.
-- Conversa contínua baseada em prompt reconstruído, histórico recente, fila de mensagens antigas e resumo compacto produzido por uma chamada separada.
-- Troca de provider com preservação opcional de histórico e normalização de aliases.
-- Persistência JSON de sessões, listagem, remoção, leitura e restauração com documentos recarregados externamente.
-- Configuração imutável de paths operacionais (`OperationalPaths`) derivados de
-  uma única raiz; `IA_ROOT` pode substituir a raiz do processo e o fallback
-  compatível permanece `C:\IA`.
-- Prompts, sessões e usage resolvem seus defaults por meio de `get_paths()` no
-  momento da chamada; argumentos explícitos continuam prevalecendo.
-- Aplicação interativa oficial versionada em `application/ia_interativa.py`,
-  com launcher local fino em `C:\IA\0_Scripts\ia_interativa.py`.
-- Fronteira pública estabilizada para a aplicação atual: a interface consome
-  serviços exclusivamente por `from ai_engine import (...)`, sem depender da
-  organização dos submódulos internos.
-- Contrato público explícito para `OperationalPaths`, `PreflightReport` e
-  `StructuredResult`, além das operações de paths, ingestão, preflight,
-  compactação, actions e consulta de usage usadas pela aplicação.
-- Contrato comum de falhas de provider em `ai_engine.providers.errors`, formado
-  por `ProviderError`, `ProviderRateLimitError`, `ProviderTimeoutError`,
-  `ProviderConnectionError` e `ProviderRequestError`. Os cinco tipos são
-  públicos pela raiz de `ai_engine`; `parse_retry_after_seconds()` permanece
-  interno.
-- OpenAI, Anthropic e Gemini convertem erros conhecidos dos SDKs para o contrato
-  comum e preservam a causa original com `raise ... from exc`.
-- Timeout comum e política de retry são lidos dinamicamente do ambiente. OpenAI
-  e Anthropic desativam o retry nativo (`max_retries=0`) e usam o helper interno
-  `retry_provider_call()`; Gemini permanece fora desse helper.
-- A aplicação apresenta falhas de provider por tipo e metadata por meio de
-  `format_error_for_user()`, sem conhecer exceções dos SDKs nem classificar
-  mensagens por ocorrências textuais de `429`, `quota` ou `rate limit`.
-- Suíte automatizada offline com pytest cobrindo models/readers; batch/workflow/prompts; structured outputs/actions/exporters; limits/usage; chat/memória/sessões; e routing/multimodal/images/adapters de providers com clientes mockados.
+## Pipeline de structured outputs
 
-## Validação existente
+O fluxo conceitual implementado é:
 
-- Os arquivos Python de `src/` e `tests/` foram analisados pelo parser AST na revisão de 22/08/2026 sem erro de sintaxe.
-- A coleta padrão do pytest está restrita por `pyproject.toml` a arquivos `test_*_offline.py`; `uv run pytest` executa atualmente os 410 testes da suíte offline, todos passando. A cobertura automatizada inclui:
-  - models e readers, com fixtures locais para texto, formatos tabulares, DOCX, PDF e imagens;
-  - batch, workflow e prompts;
-  - structured outputs, actions e exporters;
-  - limits/preflight e usage tracking;
-  - chat, memória compactada e sessões persistentes;
-  - configuração de paths, consumidores internos e defaults da aplicação;
-  - contrato da API pública, identidade dos reexports, importação sem ciclos e
-    ausência de instanciação de clients ou chamadas externas durante import;
-  - equivalência entre a confirmação humana local da aplicação e a função
-    legada de preflight;
-  - routing, multimodal, normalização de imagens e adapters de OpenAI, Gemini e Anthropic com clientes mockados.
-  - normalização de erros dos três SDKs, configuração de timeout, política de
-    retry isolada e integrada a OpenAI/Anthropic e tratamento estruturado na
-    aplicação, sem sleep real ou rede.
-- Os quatro smoke tests reais foram movidos para `tests/smoke/` e usam nomes fora do padrão de coleta automática. Todos protegem a execução em `if __name__ == "__main__":`; importá-los não dispara chamadas de rede, e eles não são executados pela coleta padrão.
-- `tests/smoke/smoke_ai_engine.py` cobre manualmente o caminho público `ai_engine.ask_ai()`; os outros módulos smoke exercitam diretamente OpenAI, Gemini e Anthropic.
-- Os smoke tests reais de provider não fazem parte da suíte offline e não foram executados nesta revisão, para não consumir APIs. A cobertura dos adapters na suíte automatizada valida payloads, roteamento, usage e retornos com mocks; ela não valida credenciais, rede, disponibilidade, modelos ou comportamento real dos serviços externos.
+```text
+provider
+  -> resposta
+  -> parse_structured_result()
+  -> validação
+  -> planning
+  -> execute_structured_result()
+  -> exporter
+  -> arquivo
+```
 
-Assim, “implementado” não implica cobertura integral: os 410 testes exercitam os contratos listados acima, mas não todos os caminhos possíveis do engine. O histórico Git registra checkpoints do projeto, mas commits não substituem testes reproduzíveis.
+Parsing e escrita são etapas separadas. `parse_structured_result()` produz um
+`StructuredResult`; os arquivos só são criados quando o chamador invoca
+`execute_structured_result()`.
+
+### Dois modos do parser
+
+`expect_outputs=False` é o default compatível/legado. Nesse modo, texto comum,
+JSON inválido ou uma raiz JSON que não seja objeto podem virar um
+`StructuredResult` apenas textual. APIs antigas foram preservadas quando
+possível.
+
+`expect_outputs=True` é o modo forte. Ele exige uma resposta JSON pura com
+raiz objeto e valida o contrato construído. JSON inválido, JSON cercado por
+fences, texto antes/depois do JSON ou uma resposta textual comum causam
+`StructuredParseError`; não há fallback silencioso para texto.
+
+O modo forte não é ativado por heurística textual. `expect_outputs=False`
+continua sendo o default em `parse_structured_result()`, workflows e `chat()`.
+
+### Decisão explícita na CLI
+
+A aplicação pergunta, para cada mensagem normal:
+
+```text
+Espera arquivos nesta resposta? [s/N]:
+```
+
+Ela aceita `s`, `sim`, `y` e `yes` como respostas afirmativas e encaminha essa
+decisão explicitamente para `chat(expect_outputs=...)`. Qualquer outra entrada,
+inclusive Enter, resulta em `False`.
+
+Não existe heurística que procure palavras como “PDF”, “DOCX” ou “arquivo” na
+mensagem para decidir o modo do parser.
+
+### Validação antes da escrita
+
+`validate_structured_result()` rejeita dados incompatíveis antes que exporters
+sejam chamados. Entre os problemas detectados estão:
+
+- formato ausente ou não suportado;
+- filename vazio ou inválido;
+- campos e coleções com tipos incompatíveis;
+- tabelas com headers, rows, células ou larguras inconsistentes;
+- `tables` em TXT, MD, DOCX ou PDF, que não oferecem suporte a tabelas
+  estruturadas nesse contrato.
+
+### Planning antes da primeira escrita
+
+`execute_structured_result()` chama `plan_structured_outputs()` antes de
+percorrer os outputs. O planning resolve e verifica:
+
+- basename, filename/path final e extensão coerente com o formato;
+- caracteres, comprimento e nomes reservados de Windows;
+- colisões entre outputs, inclusive sem diferença de maiúsculas/minúsculas;
+- política `overwrite` e existência prévia quando `overwrite=False`;
+- nomes de sheets XLSX, caracteres inválidos, limite de 31 caracteres e
+  deduplicação determinística.
+
+Consequência garantida: se houver erro de validação ou planning em qualquer
+output, nenhuma escrita começa. Isso elimina o comportamento histórico no qual
+um output anterior podia ser criado antes da descoberta de um erro estrutural
+em um output posterior.
+
+### Erros estruturados
+
+- `StructuredParseError`: a resposta não pôde ser interpretada como o
+  structured output esperado.
+- `OutputValidationError`: o contrato foi interpretado, mas possui dados
+  inválidos, seja na validação inicial ou no planning.
+- `OutputExecutionError`: o planning passou, mas ocorreu uma falha real no
+  exporter ou filesystem durante a escrita.
+
+Um `OutputExecutionError` pode ocorrer depois que outputs anteriores já foram
+escritos. Não existe rollback transacional atualmente.
+
+### Compatibilidade
+
+O novo pipeline preserva os caminhos antigos quando possível:
+
+- `expect_outputs=False` permanece o default;
+- `execute_output()` chamado diretamente mantém o comportamento histórico de
+  sanitização, extensão e dispatch;
+- `execute_structured_result()` usa validação e planning prévios e é o caminho
+  forte para executar um resultado completo.
+
+## Instruções enviadas ao modelo
+
+`STRUCTURED_OUTPUT_INSTRUCTIONS` está alinhado ao runtime. Quando structured
+output é esperado, o modelo é instruído a:
+
+- retornar exatamente um objeto JSON puro;
+- não usar fenced JSON nem texto antes/depois;
+- usar somente TXT, MD, DOCX, PDF ou XLSX;
+- usar filenames simples, seguros, distintos e com extensão coerente;
+- não prometer tabelas estruturadas em DOCX/PDF;
+- usar XLSX para dados tabulares estruturados.
+
+As instruções também distinguem XLSX linear de XLSX tabular e deixam claro que
+Markdown é conteúdo textual, não um mecanismo de renderização em DOCX/PDF.
+
+## Formatos de saída suportados
+
+### TXT — suportado e validado manualmente end-to-end
+
+O campo textual `content` é gravado como UTF-8 em arquivo `.txt`.
+
+### Markdown — suportado e validado manualmente end-to-end
+
+O contrato usa `format = "md"`; `markdown` não é um formato aceito. O conteúdo
+Markdown é texto gravado diretamente em `.md`. Isso não implica renderização
+Markdown avançada em DOCX ou PDF.
+
+### XLSX linear — suportado e validado manualmente end-to-end
+
+Sem tabelas, o exporter cria a sheet `Resultado`, escreve o título em A1 e
+começa as linhas do conteúdo em A3. Como evidência do smoke manual realizado,
+o arquivo inspecionado continha:
+
+```text
+sheet: Resultado
+A1 = Teste Linear
+A2 = vazio
+A3 = Primeira linha
+A4 = Segunda linha
+A5 = Terceira linha
+```
+
+Esses valores documentam o caso testado; não são conteúdo fixo nem requisito
+geral do produto.
+
+### XLSX tabular — suportado e validado manualmente end-to-end
+
+Cada tabela planejada vira uma sheet com headers e rows. Como evidência do
+smoke manual, a sheet `Dados` continha:
+
+```text
+A1 = Nome       B1 = Empresa
+A2 = Almir      B2 = CONSERT
+A3 = Cristiano  B3 = CONSERT
+```
+
+Esses valores são apenas a fixture inspecionada no teste manual.
+
+### DOCX — suportado e validado manualmente end-to-end
+
+O smoke manual confirmou dois parágrafos: P1 com `Teste DOCX` e P2 com o
+conteúdo textual, incluindo uma quebra de linha interna preservada.
+
+Limitações atuais do contrato DOCX:
+
+- título e texto;
+- sem tabelas estruturadas;
+- sem imagens estruturadas;
+- sem renderização Markdown avançada.
+
+### PDF — suportado e validado manualmente end-to-end
+
+O smoke manual confirmou um PDF de uma página com o título `Teste PDF`,
+conteúdo textual presente e quebra de linha preservada.
+
+Limitações atuais do contrato PDF:
+
+- título e texto;
+- sem tabelas estruturadas;
+- sem imagens estruturadas;
+- sem renderização Markdown avançada.
+
+CSV, HTML e outros formatos não integram o contrato atual de structured
+outputs.
+
+## Testes automatizados offline
+
+Baseline de 23/08/2026:
+
+```text
+706 passed, 0 failed, 1 warning
+```
+
+A coleta padrão do pytest usa os testes offline e cobre, entre outras áreas:
+
+- models, readers, batch, workflows e prompts;
+- parser nos modos legado e forte;
+- validação, planning, actions e exporters;
+- garantia de zero escrita em erro estrutural;
+- integração explícita de `expect_outputs` entre CLI, chat e workflow;
+- limits/preflight, usage, paths, API pública, conversa e sessões;
+- routing, multimodal, imagens, adapters e erros dos providers com mocks.
+
+São testes locais com fixtures, fakes, mocks e arquivos temporários. Eles não
+validam credenciais, rede, disponibilidade dos serviços ou comportamento real
+dos modelos.
+
+## Smoke/manual verification end-to-end
+
+Os testes abaixo exercitaram geração real de arquivo e o conteúdo foi aberto e
+inspecionado, não apenas a existência do path:
+
+```text
+TXT            PASS
+Markdown       PASS
+XLSX linear    PASS
+XLSX tabular   PASS
+DOCX           PASS
+PDF            PASS
+```
+
+- TXT/MD: leitura do conteúdo gravado;
+- XLSX: inspeção de sheets e células com `openpyxl`;
+- DOCX: inspeção de parágrafos com `python-docx`;
+- PDF: contagem de páginas e extração textual com PyMuPDF.
+
+O fluxo TXT foi testado manualmente com os três providers configurados:
+OpenAI, Anthropic/Claude e Gemini. Isso não significa que todos os cinco
+formatos tenham sido testados manualmente nos três providers; os demais smokes
+de formato podem ter usado somente um provider.
+
+Esses smokes manuais não fazem parte da contagem de 706 testes do pytest. Não
+foram executados novos smoke tests externos neste checkpoint documental.
 
 ## Limitações e pendências conhecidas
 
-- Preflight não é chamado automaticamente pelos workflows nem pelo chat. O
-  engine calcula e formata `PreflightReport`; a aplicação oficial apresenta o
-  relatório e solicita autorização por `confirm_preflight_interactively()`.
-- Outputs estruturados são orientados apenas por prompt e `json.loads`; não há schema imposto ao provider, validação forte, remoção de cercas Markdown ou garantia de campos obrigatórios. A criação de arquivos exige chamada explícita a `execute_structured_result()`.
-- Scripts auxiliares e legados externos ainda possuem paths próprios e não
-  foram todos migrados para `ai_engine.paths`.
-- `IA_ROOT` é lida de `os.environ` por `ai_engine.paths`; esse módulo não carrega
-  `.env`. O carregamento de `.env` continua sendo uma responsabilidade separada.
-- O carregamento de `.env` ocorre ao importar `router`, não de forma uniforme em todos os módulos chamados diretamente.
-- Modelos e `max_tokens` variam entre operações textuais e documentais; os defaults podem não existir na conta/API usada e não há camada comum de configuração.
-- No `google-genai 2.18.1`, `interactions.create()` usa internamente `_gaos`.
-  Seu timeout é configurado por `HttpOptions` em milissegundos, mas os retries
-  nativos desse caminho não puderam ser zerados por API pública confiável. Por
-  isso, `retry_provider_call()` não é usado pelo Gemini, que continua sob o
-  retry nativo do SDK. Não há monkeypatch nem alteração de `_gaos`; seus tipos
-  privados ficam restritos ao adapter e aos testes específicos do Gemini.
-- Batch individual é sequencial e usa o nome do arquivo como chave; nomes repetidos sobrescrevem resultados.
-- `collect_files()` não é recursivo.
-- PDF não executa OCR local: páginas consideradas escaneadas são renderizadas e delegadas ao provider multimodal. Imagens incorporadas podem repetir recursos por `xref`.
-- A estimativa preflight usa caracteres/4 e bytes brutos; não modela custo de imagem ou limites específicos de cada provider.
-- Usage é append-only, não tem locking, tolerância a CSV inválido ou detalhamento de tokens cached/thought para todos os providers.
-- O chat reenvia documentos e todo o contexto textual reconstruído a cada turno. A mensagem do assistente só entra no histórico quando `StructuredResult.message` não está vazio; outputs não são memorizados diretamente.
-- A compactação não é automática em `chat()`: `summarize_session()` precisa ser coordenado externamente e gera uma chamada adicional. Até isso ocorrer, mensagens antigas ficam em `pending_summary` e não entram no prompt conversacional.
-- Sessões persistem `input_path`, mensagens e resumo, mas não o conteúdo dos documentos; a restauração requer que o chamador recarregue e forneça os documentos. Não há versionamento/migração do JSON nem API única de “carregar sessão completa”.
-- A troca de provider preserva contexto porque o contexto é texto local reenviado, não porque IDs/estado remoto sejam migrados.
-- Dentro do repositório existe uma aplicação versionada, mas ainda não há entry
-  point de console empacotado, cobertura automatizada integral ou documentação
-  de uso no `README.md` (atualmente vazio).
+- A CLI lê a mensagem com uma única chamada a `input("Você: ")`; portanto, a
+  entrada atual é de uma linha. Prompts multilinha colados diretamente podem
+  ser interpretados como múltiplas entradas/respostas. Por enquanto, prompts
+  complexos devem ser enviados em uma única linha, descrevendo explicitamente
+  as quebras desejadas. Entrada multilinha adequada é uma melhoria futura de
+  UX.
+- O contrato estruturado é imposto localmente por prompt, parsing e validação;
+  ainda não usa structured output/schema nativo dos providers.
+- DOCX/PDF estruturados aceitam apenas título e texto, sem tabelas, imagens ou
+  renderização Markdown avançada.
+- Não há rollback quando uma falha de execução ocorre após escritas anteriores.
+- `overwrite=True` é o default de `execute_structured_result()`; a política e a
+  UX de overwrite ainda precisam de decisão final.
+- Preflight é coordenado pela aplicação, não chamado automaticamente pelo chat
+  ou pelos workflows.
+- Batch individual é sequencial, `collect_files()` não é recursivo e nomes de
+  arquivo repetidos podem colidir no resultado intermediário.
+- PDF não faz OCR local; páginas escaneadas são encaminhadas como imagem ao
+  provider multimodal.
+- Sessões não persistem o conteúdo dos documentos e não têm migração/versionamento
+  de schema; a restauração exige reler o caminho de entrada.
+- O chat reenvia contexto local e documentos; compactação de memória é
+  explícita e exige chamada adicional.
+- `README.md` continua vazio; instalação e uso ainda precisam de documentação
+  final.
 
-## Decisões arquiteturais importantes
+## Decisões arquiteturais que devem ser preservadas
 
-- `DocumentContent` é a representação canônica entre readers, batch e providers.
-- Providers são adaptadores diretos e stateless; contexto conversacional e persistência ficam locais.
-- Tabelas viram texto via `to_text()` para o modelo; imagens permanecem binárias e são enviadas como partes multimodais.
-- O batch consolidado cria um documento virtual; o individual faz uma chamada por documento.
-- Resposta estruturada descreve intenção de saída. Parsing e escrita em disco são etapas separadas, e filenames são reduzidos ao basename antes da escrita.
-- Memória usa duas camadas: resumo de mensagens antigas e janela recente literal. A compactação é uma ação explícita e contabilizada como chamada de API.
-- Limites são guardrails locais configuráveis, não limites descobertos dinamicamente nos providers.
-- Paths operacionais são separados da resolução do pacote Python:
-  `ai_engine.paths` não manipula `sys.path`, `PYTHONPATH`, `.venv`, uv ou a
-  localização de `api`.
-- A implementação oficial da interface reside em `application/ia_interativa.py`;
-  o script externo apenas delega sua execução com `runpy.run_path()`.
-- A API raiz está estabilizada para as necessidades da aplicação atual, sem a
-  pretensão de congelá-la permanentemente. `confirm_preflight` não integra
-  `ai_engine.__all__`: a versão de `ai_engine.limits` permanece somente para
-  compatibilidade, enquanto a interação humana pertence à aplicação.
-- As configurações atuais são `AI_PROVIDER_TIMEOUT_SECONDS=300`,
-  `AI_PROVIDER_MAX_RETRIES=2`, `AI_PROVIDER_RETRY_BASE_DELAY_SECONDS=1` e
-  `AI_PROVIDER_RETRY_MAX_DELAY_SECONDS=10`. OpenAI e Anthropic fazem no máximo
-  três tentativas totais por padrão. O retry depende exclusivamente de
-  `ProviderError.retryable=True`; `Retry-After` estruturado tem prioridade e
-  frases como `Please retry in 34.58s` não são interpretadas.
-- `log_usage()` ocorre somente depois de uma resposta remota válida e fora da
-  política de retry. Assim, falha no CSV não repete a chamada ao provider.
-- `chat()` altera o histórico somente depois de resposta válida. Uma falha
-  definitiva não cria turno fictício; na compactação, uma falha anterior a
-  `apply_summary()` preserva resumo, pendências e sessão existentes.
+- `DocumentContent` é a representação canônica entre readers, batch e
+  providers.
+- Providers são adapters stateless; conversa e persistência permanecem locais.
+- A aplicação decide interação humana, preflight, paths e apresentação; o
+  engine fornece operações reutilizáveis.
+- A decisão de esperar arquivos é explícita e não baseada no texto da mensagem.
+- Parsing, validação/planning e escrita são fronteiras distintas.
+- Falha estrutural deve ser descoberta antes da primeira escrita.
+- Structured output nativo do provider pode ser avaliado, mas não é requisito
+  obrigatório para considerar a primeira versão local utilizável.
 
-## Próxima etapa: robustez e organização
+## Próximos passos e ponto de retomada
 
-1. Organizar e continuar expandindo a suíte offline a partir dos 410 testes atuais, priorizando contratos ainda não cobertos e manutenção clara entre camadas.
-2. Revisar futuramente o retry do Gemini quando `interactions` expuser controle
-   público confiável, sem acoplamento adicional a `_gaos`.
-3. Unificar a configuração de modelos e parâmetros dos providers e tornar o
-   carregamento de `.env` uniforme e explícito.
-4. Migrar gradualmente scripts auxiliares/legados para a configuração central,
-   sem mover dados e sem misturar paths operacionais com importação do pacote.
-5. Adicionar validação mais forte para structured outputs e
-   versionamento/migração para sessões persistidas.
-6. Documentar no `README.md` o fluxo de instalação, execução e uso da API
-   pública estabilizada para a aplicação atual.
+Retomar pelo endurecimento operacional do fluxo já existente, sem ampliar
+formatos antes de estabilizá-lo:
+
+1. Criar testes controlados para falhas reais durante exporter/filesystem,
+   verificando partial writes e mensagens de `OutputExecutionError`.
+2. Decidir se haverá suporte futuro a tabelas e imagens estruturadas em
+   DOCX/PDF e, se houver, definir contrato antes da implementação.
+3. Avaliar structured output/schema nativo dos providers como melhoria de
+   robustez, sem tratá-lo como bloqueador da primeira versão utilizável.
+4. Melhorar a UX da CLI para entrada multilinha real.
+5. Definir política e UX de overwrite, inclusive confirmação ou escolha de
+   destino quando o arquivo já existir.
+6. Fazer a revisão final da documentação e preencher o `README.md` com
+   instalação, execução e exemplos da API/CLI.
+7. Executar uma rodada final de regressão offline e smoke manual controlado.
+8. Depois disso, priorizar melhorias de v2, configuração uniforme, migração de
+   sessões e redução de dívidas dos scripts legados.

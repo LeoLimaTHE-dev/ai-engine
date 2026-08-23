@@ -443,7 +443,7 @@ e um contrato explícito com a aplicação.
 Nenhum arquivo precisa ser movido para iniciar a evolução arquitetural. A
 ordem segura é:
 
-1. preservar como baseline os 410 testes offline e o comportamento de
+1. preservar como baseline os 706 testes offline do checkpoint de 23/08/2026 e o comportamento de
    `application\ia_interativa.py`;
 2. documentar o comando e o ambiente usados para tornar `ai_engine` importável
    pelos scripts externos;
@@ -467,8 +467,8 @@ ordem segura é:
 
 Continuam como dívidas técnicas prioritárias: eventual revisão do retry Gemini
 quando o SDK expuser controle público confiável; configuração uniforme de
-`.env`, modelos e parâmetros dos providers; validação mais forte de structured
-outputs; versionamento e migração de sessões; documentação de instalação e uso
+`.env`, modelos e parâmetros dos providers; testes controlados de falhas reais
+na execução de structured outputs; versionamento e migração de sessões; documentação de instalação e uso
 no `README.md`; e migração dos scripts auxiliares e legados.
 
 Essa sequência mantém a estrutura atual válida enquanto reduz o acoplamento

@@ -17,7 +17,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 410 testes, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 706 testes no checkpoint de 23/08/2026, sem chamadas reais a providers. |
 | Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
 
 ## API pública raiz
@@ -158,11 +158,11 @@ Os equivalentes estruturados acrescentam o contrato textual de outputs e convert
 
 ## Outputs estruturados e actions
 
-`actions_prompt.py` instrui o modelo a responder normalmente para análise ou retornar somente JSON quando o usuário pedir arquivos. As estruturas são `ResultTable`, `OutputRequest` e `StructuredResult`.
+`actions_prompt.py` instrui o modelo a responder normalmente quando arquivos não são esperados e a retornar JSON puro quando o chamador ativa o contrato estruturado. As estruturas são `ResultTable`, `OutputRequest` e `StructuredResult`.
 
-`parse_structured_result()` usa `json.loads`. JSON inválido ou raiz não-objeto vira mensagem textual sem outputs. Não há schema rígido.
+`parse_structured_result()` possui dois modos explícitos. Com `expect_outputs=False` (default compatível), JSON inválido ou raiz não-objeto pode virar mensagem textual sem outputs. Com `expect_outputs=True`, JSON puro com raiz objeto é obrigatório, o resultado construído passa por validação e respostas textuais inadequadas causam `StructuredParseError`. Não há heurística baseada na mensagem para ativar esse modo.
 
-`execute_structured_result()` percorre outputs. `execute_output()` valida TXT/MD/DOCX/PDF/XLSX, reduz filename ao basename contra traversal, acrescenta extensão quando ausente e delega ao exporter. Parsing não cria arquivos automaticamente: o chamador precisa invocar a action.
+`execute_structured_result()` valida e planeja todos os outputs antes da primeira escrita. O planning resolve extensão/path final, colisões, overwrite e nomes de sheets XLSX. Erro de validação/planning não produz escrita; falha posterior de exporter/filesystem vira `OutputExecutionError` e não possui rollback transacional. `execute_output()` direto mantém o comportamento histórico. Parsing não cria arquivos automaticamente: o chamador precisa invocar a action.
 
 ## Exporters
 
@@ -210,7 +210,7 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Testes automatizados offline
 
-A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. Assim, `uv run pytest` executa atualmente os 410 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. No checkpoint de 23/08/2026, `uv run pytest -q` executou 706 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
 - batch, workflow e prompts;
