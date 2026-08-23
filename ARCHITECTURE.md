@@ -7,17 +7,17 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Área | Módulos | Responsabilidade atual |
 |---|---|---|
 | API pública | `__init__.py` | Define e reexporta explicitamente os contratos usados pela aplicação, além de roteamento, multimodal, batch, workflows, chat e sessões. |
-| Configuração | `config.py`, `paths.py` | Localiza o `.env` do projeto e representa, separadamente, os paths operacionais. |
+| Configuração | `config.py`, `paths.py`, `provider_capabilities.py` | Localiza o `.env`, representa paths operacionais e resolve capability native structured por provider + modelo documental configurado. |
 | Modelo de entrada | `models/document.py` | Representação comum de documentos, imagens e tabelas. |
 | Ingestão | `readers/` | Converte arquivos suportados em `DocumentContent`. |
 | Providers | `providers/` | Adapters dos SDKs, contrato comum de erros e retry controlado pelo engine onde o SDK permite desativar retries nativos. |
 | Multimodal | `multimodal.py`, `images.py` | Roteia documentos e normaliza imagens. |
 | Orquestração | `batch.py`, `workflow.py`, `prompts.py` | Coleta, leitura, prompt, modo individual/consolidado e workflow. |
-| Saídas | `results.py`, `structured.py`, `actions_prompt.py`, `actions.py`, `exporters/` | Contrato de resposta, parsing, execução e gravação de arquivos. |
+| Saídas | `results.py`, `structured_schema.py`, `structured.py`, `structured_validation.py`, `structured_planning.py`, `actions_prompt.py`, `actions.py`, `exporters/` | Contrato/schema canônico, parsing, validação, planning, execução e gravação de arquivos. |
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 706 testes no checkpoint de 23/08/2026, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 832 testes no checkpoint de 23/08/2026, sem chamadas reais a providers. |
 | Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
 
 ## API pública raiz
@@ -103,6 +103,17 @@ Os adaptadores criam um cliente a cada chamada, leem o modelo do ambiente e usam
 - OpenAI: `OpenAI().responses.create`; documentos usam `input_text` e `input_image` com data URL.
 - Anthropic/Claude: `Anthropic().messages.create`; imagens base64 precedem o texto e há `max_tokens` explícito.
 
+No modo structured nativo, os mesmos endpoints recebem o schema canônico:
+
+- OpenAI: `text.format` com JSON Schema e `strict=true`;
+- Anthropic: `output_config.format` com JSON Schema;
+- Gemini: `response_format` com `mime_type="application/json"` e schema.
+
+Todos os adapters continuam devolvendo texto (`str`) ao engine. OpenAI
+inspeciona status/refusal, Anthropic inspeciona `stop_reason` e Gemini
+inspeciona o status da Interaction antes de aceitar uma resposta native como
+completa.
+
 Aliases são `google` para Gemini e `anthropic`/`claude` para Anthropic. Os adaptadores não mantêm thread remota nem ID de conversa.
 
 ### Erros, timeout e retry dos providers
@@ -156,9 +167,31 @@ O prompt contém a instrução e `document.to_text()`. Imagens são anexadas sep
 
 Os equivalentes estruturados acrescentam o contrato textual de outputs e convertem a resposta para `StructuredResult`.
 
+Quando `expect_outputs=True`, `workflow.py` consulta
+`provider_capabilities.py` com o provider normalizado e o modelo documental
+efetivo. `gpt-5`, `claude-sonnet-5` e `gemini-3.5-flash` são as combinações
+supported comprovadas localmente na v1. Outros modelos são `unknown` — não
+declarados incompatíveis — e usam o prompt estruturado legado antes da chamada.
+Variáveis `OPENAI_MODEL`, `ANTHROPIC_MODEL` e `GEMINI_MODEL`, vindas do `.env`
+ou do ambiente do processo, são consultadas dinamicamente.
+
+Não há fallback pós-falha: uma chamada native que resulte em refusal,
+incomplete, schema rejection ou outro `ProviderError` não é refeita no modo
+legado.
+
 ## Outputs estruturados e actions
 
 `actions_prompt.py` instrui o modelo a responder normalmente quando arquivos não são esperados e a retornar JSON puro quando o chamador ativa o contrato estruturado. As estruturas são `ResultTable`, `OutputRequest` e `StructuredResult`.
+
+`structured_schema.py` representa essas três estruturas como JSON Schema
+provider-neutral e expõe `get_structured_result_json_schema()`, que devolve uma
+cópia profunda. O schema fecha objetos com `additionalProperties: false`, usa
+os formatos `txt`, `md`, `docx`, `pdf` e `xlsx` e torna `title`/`content`
+anuláveis. Regras semânticas e de filesystem permanecem em validation/planning.
+
+`STRUCTURED_OUTPUT_INSTRUCTIONS` continua no prompt inclusive no caminho
+native da v1: ela orienta regras semânticas não portáveis no schema e preserva
+o arranjo validado por smoke. Eventual redução fica para v2.
 
 `parse_structured_result()` possui dois modos explícitos. Com `expect_outputs=False` (default compatível), JSON inválido ou raiz não-objeto pode virar mensagem textual sem outputs. Com `expect_outputs=True`, JSON puro com raiz objeto é obrigatório, o resultado construído passa por validação e respostas textuais inadequadas causam `StructuredParseError`. Não há heurística baseada na mensagem para ativar esse modo.
 
@@ -210,7 +243,7 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Testes automatizados offline
 
-A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. No checkpoint de 23/08/2026, `uv run pytest -q` executou 706 testes da suíte offline, todos passando. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. No checkpoint de 23/08/2026, `uv run pytest -q` executou 832 testes da suíte offline, todos passando, com um warning interno do `google-genai`. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
 - batch, workflow e prompts;
@@ -250,17 +283,20 @@ collect_files -> readers -> DocumentContent[] -> preflight/confirm (externo)
              to_text + normalize_image + adaptador
                             |
                Gemini / OpenAI / Anthropic
+                  | provider + modelo
+                  | supported -> schema nativo
+                  | unknown -> prompt legado
                   |                    |
                   +-> usage CSV        v
                                   resposta str
-                                    |       |
-                              retorno str   parse JSON
-                                              |
-                                      StructuredResult
-                                        |           |
-                                  histórico     actions
-                                                  |
-                                      TXT/MD/DOCX/PDF/XLSX
+                                          |
+                         parse_structured_result(expect_outputs=...)
+                                          |
+                                  validation -> planning
+                                          |
+                                  StructuredResult/actions
+                                          |
+                               TXT/MD/DOCX/PDF/XLSX
 ```
 
 O caminho textual é separado: `ask_ai()` usa `router.py` para selecionar

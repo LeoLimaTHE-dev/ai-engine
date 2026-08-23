@@ -6,6 +6,10 @@ Esta auditoria avalia se o contrato atual de `StructuredResult` pode substituir
 ou complementar o fluxo “prompt pedindo JSON + `parse_structured_result()`”
 com geração estruturada nativa de OpenAI, Gemini e Anthropic.
 
+> A análise original abaixo registra o estado anterior à implementação. A
+> seção “Consolidação pós-implementação da v1” é a referência para o estado
+> atual; recomendações posteriores preservadas neste arquivo são históricas.
+
 Esta etapa não altera produção nem testes. Toda a evidência foi obtida offline,
 a partir do código do projeto, testes e SDKs instalados. Nenhuma chamada de API,
 smoke test ou consulta à internet foi realizada.
@@ -27,6 +31,83 @@ As afirmações são classificadas assim:
 - `uv run pytest -q`: **717 passed, 0 failed, 1 warning** em 13,28 s.
 - Warning: `DeprecationWarning` interno de `google-genai`.
 
+## Consolidação pós-implementação da v1
+
+No checkpoint de 23/08/2026, a implementação incremental foi concluída e
+`uv run pytest -q` passou com **832 passed, 0 failed, 1 warning**. A suíte é
+offline e não inclui os smokes reais.
+
+O fluxo atual é:
+
+```text
+expect_outputs=True
+  -> resolve provider + modelo configurado
+  -> supports_native_structured_output(provider, model)
+  -> supported: structured nativo
+  -> unknown: STRUCTURED_OUTPUT_INSTRUCTIONS + transporte legado
+  -> resposta str
+  -> parse_structured_result(expect_outputs=True)
+  -> validation -> planning -> actions/exporters
+```
+
+`expect_outputs=False` continua compatível com texto normal e nunca força
+structured nativo. A decisão não usa heurística textual.
+
+### Schema e adapters implementados
+
+`src/ai_engine/structured_schema.py` contém o schema provider-neutral de
+`StructuredResult`, `OutputRequest` e `ResultTable`. O getter
+`get_structured_result_json_schema()` devolve uma cópia profunda. O contrato
+usa `additionalProperties: false`, formatos `txt`, `md`, `docx`, `pdf` e
+`xlsx`, e `title`/`content` anuláveis.
+
+Os envelopes atuais são:
+
+| Provider | API | Envelope native |
+|---|---|---|
+| OpenAI | Responses | `text.format`, `type=json_schema`, `strict=true` |
+| Anthropic/Claude | Messages | `output_config.format`, `type=json_schema` |
+| Gemini/Google | Interactions | `response_format`, `mime_type=application/json`, `schema` |
+
+Os três adapters continuam retornando `str`; não usam parsing tipado ou
+Pydantic. O parser forte local permanece no caminho native, e validation e
+planning continuam responsáveis pelas regras semânticas e de filesystem que
+o schema não expressa portavelmente.
+
+### Capability, modelos e fallback
+
+`src/ai_engine/provider_capabilities.py` resolve aliases, lê dinamicamente
+`OPENAI_MODEL`, `ANTHROPIC_MODEL` e `GEMINI_MODEL` e decide por provider +
+modelo. A allowlist mínima contém somente combinações comprovadas localmente:
+
+- OpenAI: `gpt-5`;
+- Anthropic/Claude: `claude-sonnet-5`;
+- Gemini/Google: `gemini-3.5-flash`.
+
+Todo outro modelo é `unknown`, o que significa “não comprovado nesta v1”, não
+“incompatível”. O fallback para o prompt legado ocorre antes da chamada. Uma
+vez iniciado o caminho native, refusal, incomplete, max tokens, schema
+rejection e demais `ProviderError` são propagados sem segunda geração. Essa
+política evita custo, retry e observabilidade duplicados.
+
+`STRUCTURED_OUTPUT_INSTRUCTIONS` permanece inclusive no caminho native porque
+carrega regras semânticas fora do schema e o arranjo foi validado pelos smokes.
+Sua redução, assim como Pydantic/parsing tipado, fica para v2.
+
+### Evidência real separada
+
+Foram registrados, fora da suíte automatizada:
+
+| Provider | `outputs=[]` | TXT end-to-end |
+|---|---:|---:|
+| OpenAI (`gpt-5`) | PASS | PASS |
+| Anthropic/Claude (`claude-sonnet-5`) | PASS | PASS |
+| Gemini/Google (`gemini-3.5-flash`) | PASS | PASS |
+
+Os testes manuais anteriores de TXT, MD, XLSX linear, XLSX tabular, DOCX e PDF
+também permanecem registrados. Isso não comprova todos os formatos em todos os
+providers.
+
 ## Versões instaladas
 
 | SDK | Versão | Evidência |
@@ -39,7 +120,7 @@ As afirmações são classificadas assim:
 `pydantic` não é dependência direta do projeto em `pyproject.toml`; chega
 pelos SDKs.
 
-## Arquitetura atual
+## Arquitetura na data da auditoria original
 
 ### Fluxo efetivo
 
@@ -74,9 +155,10 @@ ou exige JSON válido. Não existe detecção por palavras da mensagem.
 | Gemini | Interactions API | `client.interactions.create()` | mesma API com itens `text` e `image` |
 | Anthropic | Messages API | `client.messages.create()` | mesma API com blocos `image` e `text` |
 
-Os adapters retornam `str`: `response.output_text`, `interaction.output_text`
-ou concatenação dos blocos textuais do Anthropic. Nenhum adapter envia schema
-hoje.
+Os adapters retornavam `str`: `response.output_text`, `interaction.output_text`
+ou concatenação dos blocos textuais do Anthropic. Naquele baseline, nenhum
+adapter enviava schema. Na v1 consolidada, continuam retornando `str`, mas já
+enviam o schema quando capability e `expect_outputs` ativam o caminho native.
 
 Defaults encontrados:
 
@@ -646,7 +728,7 @@ Preservar adapters mockados e smoke separado.
 | Aliases `claude`/`google` perderem routing | baixo | testes de routing/capability |
 | Validation/planning/exporters serem contornados | alto | conversão única para domínio e pipeline obrigatório |
 
-## Plano incremental recomendado
+## Plano incremental original (concluído)
 
 1. **Verificação externa prévia:** confirmar na documentação oficial atual a
    compatibilidade de cada modelo default com structured output, multimodal,
@@ -670,7 +752,7 @@ Preservar adapters mockados e smoke separado.
 10. **Reavaliar Pydantic:** somente após os três adapters funcionarem com schema
     manual e houver evidência de que parsing tipado reduz manutenção.
 
-## Conclusão
+## Conclusão original
 
 **É tecnicamente viável implementar structured output nativo nos três
 providers usando as APIs já adotadas pelo projeto.** Não é seguro fazer um

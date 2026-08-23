@@ -199,6 +199,7 @@ providers: Gemini | OpenAI | Anthropic
   |-- erros dos SDKs -> ProviderError comum
   |-- OpenAI/Anthropic: retry do engine após normalização
   |-- Gemini: retry nativo de interactions
+  |-- provider + modelo decide native ou legado antes da chamada
   |                         |
   |                         +--> 6_Dados\usage\api_usage.csv
   v
@@ -235,6 +236,7 @@ reconstruído e reenviado.
 - preflight obrigatório antes da requisição principal;
 - confirmação separada antes da compactação de memória;
 - comandos interativos `sair`, `limpar`, `uso`, `provider` e `salvar`;
+- entrada `multiline`/`multi`, encerrada por uma linha contendo somente `/fim`;
 - autosave depois de mudanças relevantes e turnos bem-sucedidos;
 - apresentação da resposta;
 - execução dos arquivos pedidos em respostas estruturadas;
@@ -315,6 +317,31 @@ Retry-After estruturado prevalece, sem parsing de frases textuais.
 
 `log_usage()` permanece depois do sucesso remoto e fora do retry. Falha ao
 gravar usage não repete a operação do provider.
+
+### Structured output na v1
+
+O workflow documental resolve o modelo efetivo por `OPENAI_MODEL`,
+`ANTHROPIC_MODEL` ou `GEMINI_MODEL`, carregados do `.env` ou herdados do
+ambiente do processo. `provider_capabilities.py` combina provider, aliases e
+modelo para decidir o transporte antes da chamada.
+
+As combinações comprovadas por smoke e marcadas como supported são OpenAI com
+`gpt-5`, Anthropic/Claude com `claude-sonnet-5` e Gemini/Google com
+`gemini-3.5-flash`. Outros modelos são `unknown`, não necessariamente
+incompatíveis, e seguem pelo prompt estruturado legado. Uma chamada native já
+iniciada nunca é repetida automaticamente no modo legado.
+
+No transporte native, OpenAI usa Responses API/`text.format` estrito,
+Anthropic usa Messages API/`output_config.format` e Gemini usa Interactions
+API/`response_format` com MIME JSON. Os três retornam `str`. A resposta ainda
+passa por `parse_structured_result(expect_outputs=True)`, validation, planning
+e actions/exporters. O schema canônico fica em `structured_schema.py`; regras
+semânticas e de filesystem continuam locais.
+
+`STRUCTURED_OUTPUT_INSTRUCTIONS` permanece também no caminho native da v1,
+pois contém regras que o schema comum não expressa. Refusal, incomplete,
+schema rejection e demais erros são propagados pelo contrato de
+`ProviderError`, sem segunda geração silenciosa.
 
 O Gemini é a exceção atual: `google-genai 2.18.1` implementa
 `interactions.create()` por `_gaos`; timeout chega via `HttpOptions` em
@@ -443,7 +470,7 @@ e um contrato explícito com a aplicação.
 Nenhum arquivo precisa ser movido para iniciar a evolução arquitetural. A
 ordem segura é:
 
-1. preservar como baseline os 706 testes offline do checkpoint de 23/08/2026 e o comportamento de
+1. preservar como baseline os 832 testes offline do checkpoint de 23/08/2026 e o comportamento de
    `application\ia_interativa.py`;
 2. documentar o comando e o ambiente usados para tornar `ai_engine` importável
    pelos scripts externos;
@@ -465,11 +492,10 @@ ordem segura é:
 10. revisar separadamente a política de armazenamento de configurações,
     secrets e dados pessoais, sem incorporar seus valores à documentação.
 
-Continuam como dívidas técnicas prioritárias: eventual revisão do retry Gemini
-quando o SDK expuser controle público confiável; configuração uniforme de
-`.env`, modelos e parâmetros dos providers; testes controlados de falhas reais
-na execução de structured outputs; versionamento e migração de sessões; documentação de instalação e uso
-no `README.md`; e migração dos scripts auxiliares e legados.
+Para fechar a v1 restam regressão final, checklist manual final e
+freeze/versionamento. Evoluções de Pydantic/parsing tipado, redução do prompt
+native, tabelas/imagens avançadas em DOCX/PDF, rollback transacional,
+capabilities mais ricas, migração de sessões e scripts legados ficam para v2.
 
 Essa sequência mantém a estrutura atual válida enquanto reduz o acoplamento
 antes de qualquer movimentação física de arquivos.

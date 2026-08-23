@@ -1,250 +1,145 @@
 # Estado do projeto
 
-> Checkpoint documental de 23/08/2026. Futuros agentes devem conferir este
-> arquivo, o código e os testes atuais antes de alterar o projeto.
+> Checkpoint de consolidação documental da v1 em 23/08/2026. Antes de novas
+> mudanças, confira este documento, o código e a suíte atual.
 
-## Resumo operacional
+## Situação da v1
 
-O núcleo necessário para uma primeira versão local utilizável está
-majoritariamente implementado. O `ai-engine` lê documentos, conversa com
-Gemini, OpenAI ou Anthropic/Claude, mantém contexto local e gera arquivos por
-um contrato estruturado. Structured outputs funcionam end-to-end nos cinco
-formatos atualmente suportados: TXT, MD, DOCX, PDF e XLSX.
+O núcleo técnico da v1 está concluído e próximo do freeze. O `ai-engine` lê
+documentos, trabalha com OpenAI, Anthropic/Claude e Gemini/Google, mantém
+contexto local e produz TXT, MD, DOCX, PDF e XLSX pelo contrato estruturado.
 
-O estado deste checkpoint foi comparado com a implementação e validado por
-`uv run pytest -q`: **706 testes automatizados offline passaram, 0 falharam**.
-Houve 1 `DeprecationWarning` originado em `google-genai`; ele não representa
-falha da suíte. Os testes manuais descritos abaixo são evidência separada e não
-estão incluídos nesses 706 testes.
-
-## Implementado no projeto
-
-- Modelo comum de documentos com texto, tabelas, imagens e metadados.
-- Readers para TXT, Markdown, CSV, DOCX, PDF, XLSX/XLSM e formatos comuns de
-  imagem.
-- Integrações textuais e multimodais com Gemini, OpenAI e Anthropic/Claude.
-- Batch individual ou consolidado, workflows com prompt livre e template
-  opcional, preflight local, registro de usage e conversa com memória local.
-- Persistência de sessões e troca de provider com preservação opcional do
-  histórico.
-- Contrato comum para erros de provider e retry controlado pelo engine em
-  OpenAI/Anthropic; Gemini continua com o retry nativo do SDK.
-- Aplicação interativa oficial em `application/ia_interativa.py` e API pública
-  consumida pela raiz de `ai_engine`.
-- Pipeline de structured outputs com parsing em dois modos, validação,
-  planning completo anterior à escrita, execução e exporters.
-
-## Pipeline de structured outputs
-
-O fluxo conceitual implementado é:
+Baseline deste checkpoint:
 
 ```text
-provider
-  -> resposta
-  -> parse_structured_result()
-  -> validação
-  -> planning
-  -> execute_structured_result()
-  -> exporter
-  -> arquivo
+832 passed, 0 failed, 1 warning
 ```
 
-Parsing e escrita são etapas separadas. `parse_structured_result()` produz um
-`StructuredResult`; os arquivos só são criados quando o chamador invoca
-`execute_structured_result()`.
+O warning é um `DeprecationWarning` interno do `google-genai`. A suíte padrão é
+offline; os smokes reais listados abaixo são evidência manual separada e não
+integram essa contagem.
 
-### Dois modos do parser
-
-`expect_outputs=False` é o default compatível/legado. Nesse modo, texto comum,
-JSON inválido ou uma raiz JSON que não seja objeto podem virar um
-`StructuredResult` apenas textual. APIs antigas foram preservadas quando
-possível.
-
-`expect_outputs=True` é o modo forte. Ele exige uma resposta JSON pura com
-raiz objeto e valida o contrato construído. JSON inválido, JSON cercado por
-fences, texto antes/depois do JSON ou uma resposta textual comum causam
-`StructuredParseError`; não há fallback silencioso para texto.
-
-O modo forte não é ativado por heurística textual. `expect_outputs=False`
-continua sendo o default em `parse_structured_result()`, workflows e `chat()`.
-
-### Decisão explícita na CLI
-
-A aplicação pergunta, para cada mensagem normal:
+## Fluxo estruturado atual
 
 ```text
-Espera arquivos nesta resposta? [s/N]:
+expect_outputs=True
+  -> resolve provider + modelo configurado
+  -> consulta capability native structured
+  -> modelo supported: envelope structured nativo
+  -> modelo unknown: prompt estruturado legado
+  -> resposta textual str
+  -> parse_structured_result(expect_outputs=True)
+  -> validate_structured_result()
+  -> plan_structured_outputs()
+  -> actions/exporters
 ```
 
-Ela aceita `s`, `sim`, `y` e `yes` como respostas afirmativas e encaminha essa
-decisão explicitamente para `chat(expect_outputs=...)`. Qualquer outra entrada,
-inclusive Enter, resulta em `False`.
+`expect_outputs=False` continua sendo o default compatível: não força modo
+nativo e o parser aceita resposta textual normal. Não existe heurística por
+palavras do prompt.
 
-Não existe heurística que procure palavras como “PDF”, “DOCX” ou “arquivo” na
-mensagem para decidir o modo do parser.
+### Providers e transporte nativo
 
-### Validação antes da escrita
+- OpenAI usa Responses API com `text.format`, `type="json_schema"` e
+  `strict=true`.
+- Anthropic/Claude usa Messages API com `output_config.format` e JSON Schema.
+- Gemini/Google usa Interactions API com `response_format`, MIME
+  `application/json` e schema.
 
-`validate_structured_result()` rejeita dados incompatíveis antes que exporters
-sejam chamados. Entre os problemas detectados estão:
+Os três adapters continuam retornando `str` para o engine. Mesmo no caminho
+nativo, a resposta passa pelo parser forte local e depois pelas camadas de
+validação, planning e execução.
 
-- formato ausente ou não suportado;
-- filename vazio ou inválido;
-- campos e coleções com tipos incompatíveis;
-- tabelas com headers, rows, células ou larguras inconsistentes;
-- `tables` em TXT, MD, DOCX ou PDF, que não oferecem suporte a tabelas
-  estruturadas nesse contrato.
+### Schema canônico
 
-### Planning antes da primeira escrita
+`src/ai_engine/structured_schema.py` contém o contrato canônico e expõe
+`get_structured_result_json_schema()`, que retorna uma cópia profunda. O schema
+representa `StructuredResult`, `OutputRequest` e `ResultTable`, aceita somente
+`txt`, `md`, `docx`, `pdf` e `xlsx`, fecha os objetos com
+`additionalProperties: false` e expressa `title`/`content` como string ou null.
 
-`execute_structured_result()` chama `plan_structured_outputs()` antes de
-percorrer os outputs. O planning resolve e verifica:
+O schema não tenta representar segurança de filename, coerência de extensão,
+tables somente em XLSX, largura de rows, colisões, overwrite ou nomes de
+sheets. Essas regras continuam em validation e planning.
 
-- basename, filename/path final e extensão coerente com o formato;
-- caracteres, comprimento e nomes reservados de Windows;
-- colisões entre outputs, inclusive sem diferença de maiúsculas/minúsculas;
-- política `overwrite` e existência prévia quando `overwrite=False`;
-- nomes de sheets XLSX, caracteres inválidos, limite de 31 caracteres e
-  deduplicação determinística.
+### Capability por provider e modelo
 
-Consequência garantida: se houver erro de validação ou planning em qualquer
-output, nenhuma escrita começa. Isso elimina o comportamento histórico no qual
-um output anterior podia ser criado antes da descoberta de um erro estrutural
-em um output posterior.
+`src/ai_engine/provider_capabilities.py` normaliza aliases, resolve o modelo
+documental efetivo e responde se a combinação possui evidência local para
+native structured output. A allowlist conservadora da v1 é:
 
-### Erros estruturados
+| Provider | Modelo supported |
+|---|---|
+| OpenAI | `gpt-5` |
+| Anthropic/Claude | `claude-sonnet-5` |
+| Gemini/Google | `gemini-3.5-flash` |
 
-- `StructuredParseError`: a resposta não pôde ser interpretada como o
-  structured output esperado.
-- `OutputValidationError`: o contrato foi interpretado, mas possui dados
-  inválidos, seja na validação inicial ou no planning.
-- `OutputExecutionError`: o planning passou, mas ocorreu uma falha real no
-  exporter ou filesystem durante a escrita.
+Qualquer outro nome é `unknown`: isso não significa incompatibilidade, apenas
+ausência de comprovação local nesta v1. Nesse caso, o workflow escolhe o prompt
+estruturado legado antes da chamada e ainda exige JSON válido pelo parser
+forte.
 
-Um `OutputExecutionError` pode ocorrer depois que outputs anteriores já foram
-escritos. Não existe rollback transacional atualmente.
+Os modelos são lidos dinamicamente de `OPENAI_MODEL`, `ANTHROPIC_MODEL` e
+`GEMINI_MODEL`, definidos no `.env` do projeto ou no ambiente do processo. A
+troca não exige alteração de código.
 
-### Compatibilidade
+### Política de fallback e erros
 
-O novo pipeline preserva os caminhos antigos quando possível:
+O fallback é decidido exclusivamente antes da chamada:
 
-- `expect_outputs=False` permanece o default;
-- `execute_output()` chamado diretamente mantém o comportamento histórico de
-  sanitização, extensão e dispatch;
-- `execute_structured_result()` usa validação e planning prévios e é o caminho
-  forte para executar um resultado completo.
+- supported: native structured;
+- unknown: prompt estruturado legado.
 
-## Instruções enviadas ao modelo
+Depois que uma chamada native começa, não há segunda chamada automática em
+modo legado. Refusal, incomplete, limite de tokens, schema rejection e demais
+falhas normalizadas como `ProviderError` são propagadas. Isso evita custo,
+retry e geração duplicados.
 
-`STRUCTURED_OUTPUT_INSTRUCTIONS` está alinhado ao runtime. Quando structured
-output é esperado, o modelo é instruído a:
+`STRUCTURED_OUTPUT_INSTRUCTIONS` permanece no prompt inclusive no caminho
+nativo da v1. Além de a combinação ter sido validada nos smokes, as instruções
+carregam regras semânticas que o schema portável não expressa. Reduzi-las é
+uma avaliação de v2.
 
-- retornar exatamente um objeto JSON puro;
-- não usar fenced JSON nem texto antes/depois;
-- usar somente TXT, MD, DOCX, PDF ou XLSX;
-- usar filenames simples, seguros, distintos e com extensão coerente;
-- não prometer tabelas estruturadas em DOCX/PDF;
-- usar XLSX para dados tabulares estruturados.
+## Pipeline local e formatos
 
-As instruções também distinguem XLSX linear de XLSX tabular e deixam claro que
-Markdown é conteúdo textual, não um mecanismo de renderização em DOCX/PDF.
+Parsing não grava arquivos. `parse_structured_result()` constrói e valida o
+domínio; `execute_structured_result()` planeja todos os outputs antes da
+primeira escrita e então chama os exporters.
 
-## Formatos de saída suportados
+- TXT e MD: conteúdo textual UTF-8.
+- XLSX linear: sheet `Resultado`, título opcional e linhas na coluna A.
+- XLSX tabular: uma sheet por `ResultTable`, com headers e rows.
+- DOCX: título e texto; sem tabelas/imagens estruturadas ou Markdown avançado.
+- PDF: título e texto; sem tabelas/imagens estruturadas ou Markdown avançado.
 
-### TXT — suportado e validado manualmente end-to-end
+Validation rejeita contrato e tipos inválidos. Planning resolve filename,
+extensão, destino, colisões, overwrite e nomes de sheets. Falha anterior à
+execução não inicia escrita. Uma falha real de exporter pode deixar arquivos
+anteriores gravados, pois não há rollback transacional.
 
-O campo textual `content` é gravado como UTF-8 em arquivo `.txt`.
+## Aplicação e operação
 
-### Markdown — suportado e validado manualmente end-to-end
+A aplicação oficial é `application/ia_interativa.py`; o launcher histórico em
+`C:\IA\0_Scripts\ia_interativa.py` apenas delega para ela. Sem `IA_ROOT`, os
+paths operacionais usam `C:\IA`, com entrada convencional em
+`C:\IA\2_Entrada` (default da aplicação: `batch_teste`) e saída em
+`C:\IA\3_Saída`.
 
-O contrato usa `format = "md"`; `markdown` não é um formato aceito. O conteúdo
-Markdown é texto gravado diretamente em `.md`. Isso não implica renderização
-Markdown avançada em DOCX ou PDF.
+A CLI pergunta explicitamente se espera arquivos. O comando `multiline` (ou
+`multi`) inicia entrada multilinha e uma linha contendo apenas `/fim` encerra
+a mensagem.
 
-### XLSX linear — suportado e validado manualmente end-to-end
+## Evidência manual separada
 
-Sem tabelas, o exporter cria a sheet `Resultado`, escreve o título em A1 e
-começa as linhas do conteúdo em A3. Como evidência do smoke manual realizado,
-o arquivo inspecionado continha:
+Smokes native structured reais:
 
-```text
-sheet: Resultado
-A1 = Teste Linear
-A2 = vazio
-A3 = Primeira linha
-A4 = Segunda linha
-A5 = Terceira linha
-```
+| Provider | `outputs=[]` | TXT end-to-end |
+|---|---:|---:|
+| OpenAI (`gpt-5`) | PASS | PASS |
+| Anthropic/Claude (`claude-sonnet-5`) | PASS | PASS |
+| Gemini/Google (`gemini-3.5-flash`) | PASS | PASS |
 
-Esses valores documentam o caso testado; não são conteúdo fixo nem requisito
-geral do produto.
-
-### XLSX tabular — suportado e validado manualmente end-to-end
-
-Cada tabela planejada vira uma sheet com headers e rows. Como evidência do
-smoke manual, a sheet `Dados` continha:
-
-```text
-A1 = Nome       B1 = Empresa
-A2 = Almir      B2 = CONSERT
-A3 = Cristiano  B3 = CONSERT
-```
-
-Esses valores são apenas a fixture inspecionada no teste manual.
-
-### DOCX — suportado e validado manualmente end-to-end
-
-O smoke manual confirmou dois parágrafos: P1 com `Teste DOCX` e P2 com o
-conteúdo textual, incluindo uma quebra de linha interna preservada.
-
-Limitações atuais do contrato DOCX:
-
-- título e texto;
-- sem tabelas estruturadas;
-- sem imagens estruturadas;
-- sem renderização Markdown avançada.
-
-### PDF — suportado e validado manualmente end-to-end
-
-O smoke manual confirmou um PDF de uma página com o título `Teste PDF`,
-conteúdo textual presente e quebra de linha preservada.
-
-Limitações atuais do contrato PDF:
-
-- título e texto;
-- sem tabelas estruturadas;
-- sem imagens estruturadas;
-- sem renderização Markdown avançada.
-
-CSV, HTML e outros formatos não integram o contrato atual de structured
-outputs.
-
-## Testes automatizados offline
-
-Baseline de 23/08/2026:
-
-```text
-706 passed, 0 failed, 1 warning
-```
-
-A coleta padrão do pytest usa os testes offline e cobre, entre outras áreas:
-
-- models, readers, batch, workflows e prompts;
-- parser nos modos legado e forte;
-- validação, planning, actions e exporters;
-- garantia de zero escrita em erro estrutural;
-- integração explícita de `expect_outputs` entre CLI, chat e workflow;
-- limits/preflight, usage, paths, API pública, conversa e sessões;
-- routing, multimodal, imagens, adapters e erros dos providers com mocks.
-
-São testes locais com fixtures, fakes, mocks e arquivos temporários. Eles não
-validam credenciais, rede, disponibilidade dos serviços ou comportamento real
-dos modelos.
-
-## Smoke/manual verification end-to-end
-
-Os testes abaixo exercitaram geração real de arquivo e o conteúdo foi aberto e
-inspecionado, não apenas a existência do path:
+Também permanecem válidos os testes manuais anteriores de exporters/fluxo:
 
 ```text
 TXT            PASS
@@ -255,76 +150,30 @@ DOCX           PASS
 PDF            PASS
 ```
 
-- TXT/MD: leitura do conteúdo gravado;
-- XLSX: inspeção de sheets e células com `openpyxl`;
-- DOCX: inspeção de parágrafos com `python-docx`;
-- PDF: contagem de páginas e extração textual com PyMuPDF.
+Essas duas listas têm escopos diferentes. Não há evidência de que todos os
+formatos tenham sido testados nos três providers.
 
-O fluxo TXT foi testado manualmente com os três providers configurados:
-OpenAI, Anthropic/Claude e Gemini. Isso não significa que todos os cinco
-formatos tenham sido testados manualmente nos três providers; os demais smokes
-de formato podem ter usado somente um provider.
+## Decisões preservadas na v1
 
-Esses smokes manuais não fazem parte da contagem de 706 testes do pytest. Não
-foram executados novos smoke tests externos neste checkpoint documental.
+- `DocumentContent` é a fronteira comum entre readers, batch e providers.
+- Providers são stateless; conversa e persistência permanecem locais.
+- `expect_outputs` é explícito e não deriva do texto do usuário.
+- Schema/transporte, parsing, validation, planning e escrita são camadas
+  distintas.
+- O parser e os guardrails locais permanecem depois do transporte nativo.
+- Não há fallback silencioso depois de uma chamada native.
 
-## Limitações e pendências conhecidas
+## Itens de v2
 
-- A CLI lê a mensagem com uma única chamada a `input("Você: ")`; portanto, a
-  entrada atual é de uma linha. Prompts multilinha colados diretamente podem
-  ser interpretados como múltiplas entradas/respostas. Por enquanto, prompts
-  complexos devem ser enviados em uma única linha, descrevendo explicitamente
-  as quebras desejadas. Entrada multilinha adequada é uma melhoria futura de
-  UX.
-- O contrato estruturado é imposto localmente por prompt, parsing e validação;
-  ainda não usa structured output/schema nativo dos providers.
-- DOCX/PDF estruturados aceitam apenas título e texto, sem tabelas, imagens ou
-  renderização Markdown avançada.
-- Não há rollback quando uma falha de execução ocorre após escritas anteriores.
-- `overwrite=True` é o default de `execute_structured_result()`; a política e a
-  UX de overwrite ainda precisam de decisão final.
-- Preflight é coordenado pela aplicação, não chamado automaticamente pelo chat
-  ou pelos workflows.
-- Batch individual é sequencial, `collect_files()` não é recursivo e nomes de
-  arquivo repetidos podem colidir no resultado intermediário.
-- PDF não faz OCR local; páginas escaneadas são encaminhadas como imagem ao
-  provider multimodal.
-- Sessões não persistem o conteúdo dos documentos e não têm migração/versionamento
-  de schema; a restauração exige reler o caminho de entrada.
-- O chat reenvia contexto local e documentos; compactação de memória é
-  explícita e exige chamada adicional.
-- `README.md` continua vazio; instalação e uso ainda precisam de documentação
-  final.
+- Pydantic ou parsing tipado dos SDKs.
+- Redução de `STRUCTURED_OUTPUT_INSTRUCTIONS` no caminho native.
+- Tabelas, imagens e renderização avançada em DOCX/PDF.
+- Rollback transacional de escritas parciais.
+- Capability mais rica que a allowlist mínima da v1.
+- Evolução de sessões, scripts legados, batch paralelo e OCR local.
 
-## Decisões arquiteturais que devem ser preservadas
+## Próximos passos para fechar a v1
 
-- `DocumentContent` é a representação canônica entre readers, batch e
-  providers.
-- Providers são adapters stateless; conversa e persistência permanecem locais.
-- A aplicação decide interação humana, preflight, paths e apresentação; o
-  engine fornece operações reutilizáveis.
-- A decisão de esperar arquivos é explícita e não baseada no texto da mensagem.
-- Parsing, validação/planning e escrita são fronteiras distintas.
-- Falha estrutural deve ser descoberta antes da primeira escrita.
-- Structured output nativo do provider pode ser avaliado, mas não é requisito
-  obrigatório para considerar a primeira versão local utilizável.
-
-## Próximos passos e ponto de retomada
-
-Retomar pelo endurecimento operacional do fluxo já existente, sem ampliar
-formatos antes de estabilizá-lo:
-
-1. Criar testes controlados para falhas reais durante exporter/filesystem,
-   verificando partial writes e mensagens de `OutputExecutionError`.
-2. Decidir se haverá suporte futuro a tabelas e imagens estruturadas em
-   DOCX/PDF e, se houver, definir contrato antes da implementação.
-3. Avaliar structured output/schema nativo dos providers como melhoria de
-   robustez, sem tratá-lo como bloqueador da primeira versão utilizável.
-4. Melhorar a UX da CLI para entrada multilinha real.
-5. Definir política e UX de overwrite, inclusive confirmação ou escolha de
-   destino quando o arquivo já existir.
-6. Fazer a revisão final da documentação e preencher o `README.md` com
-   instalação, execução e exemplos da API/CLI.
-7. Executar uma rodada final de regressão offline e smoke manual controlado.
-8. Depois disso, priorizar melhorias de v2, configuração uniforme, migração de
-   sessões e redução de dívidas dos scripts legados.
+1. Executar regressão final.
+2. Cumprir o checklist manual final, sem ampliar escopo.
+3. Fazer freeze e versionamento da v1.
