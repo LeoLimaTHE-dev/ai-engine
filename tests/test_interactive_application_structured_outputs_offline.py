@@ -71,6 +71,55 @@ def run_loop(module_session):
 
 
 @pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        (["uma linha", "/fim"], "uma linha"),
+        (["linha 1", "linha 2", "/fim"], "linha 1\nlinha 2"),
+        (["linha 1", "", "linha 3", "/fim"], "linha 1\n\nlinha 3"),
+        (["texto /fim no meio", "continua", "/fim"], "texto /fim no meio\ncontinua"),
+        (["linha", " /fim "], "linha"),
+        (
+            ["sair", "provider", "uso", "salvar", "limpar", "multiline", "/fim"],
+            "sair\nprovider\nuso\nsalvar\nlimpar\nmultiline",
+        ),
+        (["/fim"], ""),
+    ],
+    ids=[
+        "single-line",
+        "multiple-lines",
+        "internal-empty-line",
+        "inline-terminator",
+        "stripped-terminator",
+        "commands-are-content",
+        "empty",
+    ],
+)
+def test_read_multiline_message_preserves_content(lines, expected, monkeypatch):
+    answers = iter(lines)
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    assert ia_interativa.read_multiline_message() == expected
+
+
+def test_read_multiline_message_preserves_markdown_layout(monkeypatch):
+    answers = iter(
+        [
+            "# Teste Markdown",
+            "",
+            "## Seção",
+            "",
+            "Texto",
+            "/fim",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    assert ia_interativa.read_multiline_message() == (
+        "# Teste Markdown\n\n## Seção\n\nTexto"
+    )
+
+
+@pytest.mark.parametrize(
     "choice",
     ["", "n", "talvez", " N ", "não"],
 )
@@ -119,6 +168,83 @@ def test_normal_turn_forwards_only_explicit_expect_outputs_choice(
 
     assert calls[0]["expect_outputs"] is expected
     assert sum("Espera arquivos" in prompt for prompt in prompts) == 1
+
+
+@pytest.mark.parametrize(
+    ("activation", "choice", "expected_outputs"),
+    [
+        ("multiline", "sim", True),
+        ("multi", "n", False),
+    ],
+)
+def test_multiline_turn_forwards_exact_content_and_explicit_output_choice(
+    activation,
+    choice,
+    expected_outputs,
+    monkeypatch,
+):
+    session = FakeSession()
+    prompts = configure_run_chat(
+        monkeypatch,
+        [
+            activation,
+            "linha A",
+            "sair",
+            "provider",
+            "texto com /fim no meio",
+            "/fim",
+            choice,
+            "sair",
+        ],
+    )
+    chat_calls = []
+    preflight_calls = []
+
+    def fake_chat(**kwargs):
+        chat_calls.append(kwargs)
+        return StructuredResult(message="Resposta")
+
+    monkeypatch.setattr(ia_interativa, "chat", fake_chat)
+    monkeypatch.setattr(
+        ia_interativa,
+        "analyze_documents",
+        lambda **kwargs: preflight_calls.append(kwargs) or object(),
+    )
+
+    run_loop(session)
+
+    expected_message = "linha A\nsair\nprovider\ntexto com /fim no meio"
+    assert chat_calls[0]["user_message"] == expected_message
+    assert chat_calls[0]["expect_outputs"] is expected_outputs
+    assert preflight_calls[0]["extra_text"] == expected_message
+    assert activation not in chat_calls[0]["user_message"]
+    assert "/fim\n" not in chat_calls[0]["user_message"]
+    assert not chat_calls[0]["user_message"].endswith("/fim")
+    assert sum("Espera arquivos" in prompt for prompt in prompts) == 1
+
+
+def test_empty_multiline_message_skips_preflight_and_chat(
+    monkeypatch,
+    capsys,
+):
+    session = FakeSession()
+    prompts = configure_run_chat(monkeypatch, ["multiline", "/fim", "sair"])
+    monkeypatch.setattr(
+        ia_interativa,
+        "analyze_documents",
+        lambda **kwargs: pytest.fail("empty multiline must not run preflight"),
+    )
+    monkeypatch.setattr(
+        ia_interativa,
+        "chat",
+        lambda **kwargs: pytest.fail("empty multiline must not call chat"),
+    )
+
+    run_loop(session)
+
+    output = capsys.readouterr().out
+    assert "Mensagem vazia. Nada foi enviado." in output
+    assert not any("Espera arquivos" in prompt for prompt in prompts)
 
 
 @pytest.mark.parametrize("command", ["sair", "limpar", "uso", "provider", "salvar"])

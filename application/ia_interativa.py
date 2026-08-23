@@ -132,6 +132,26 @@ def ask_expect_outputs() -> bool:
     )
 
 
+def read_multiline_message() -> str:
+    print()
+    print("Modo multilinha.")
+    print("Digite/cole quantas linhas quiser.")
+    print("Finalize digitando uma linha contendo apenas:")
+    print("/fim")
+
+    lines = []
+
+    while True:
+        line = input("")
+
+        if line.strip() == "/fim":
+            break
+
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
 def format_structured_error_for_user(exc: Exception) -> str:
     if isinstance(exc, StructuredParseError):
         return "\n".join(
@@ -626,6 +646,7 @@ def run_chat(
     print("  uso      -> mostrar uso total registrado")
     print("  provider -> trocar o provider atual")
     print("  salvar   -> salvar sessão manualmente")
+    print("  multiline -> inserir múltiplas linhas; finalize com /fim")
 
     print()
     print("A sessão é salva automaticamente após mudanças importantes.")
@@ -639,6 +660,18 @@ def run_chat(
             continue
 
         command = user_message.lower()
+
+        if command in ("multiline", "multi"):
+            user_message = read_multiline_message()
+
+            if user_message == "":
+                print()
+                print("Mensagem vazia. Nada foi enviado.")
+
+                continue
+
+            # Commands typed inside multiline mode are normal message content.
+            command = None
 
         # ----------------------------------------------------
         # EXIT
