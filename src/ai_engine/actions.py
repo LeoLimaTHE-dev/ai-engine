@@ -6,8 +6,11 @@ from .exporters import (
 )
 from .results import (
     OutputRequest,
+    ResultTable,
     StructuredResult,
 )
+from .structured_errors import OutputExecutionError
+from .structured_planning import PlannedOutput, plan_structured_outputs
 
 SUPPORTED_FORMATS = {
     "txt",
@@ -70,15 +73,51 @@ def execute_output(
 def execute_structured_result(
     result: StructuredResult,
     output_dir: str | Path,
+    *,
+    overwrite: bool = True,
 ) -> list[Path]:
+    plan = plan_structured_outputs(
+        result=result,
+        output_dir=output_dir,
+        overwrite=overwrite,
+    )
     created_files: list[Path] = []
 
-    for output in result.outputs:
-        created_files.append(
-            execute_output(
-                output=output,
-                output_dir=output_dir,
-            )
-        )
+    for output_index, planned in enumerate(plan.outputs):
+        try:
+            created_files.append(_execute_planned_output(planned))
+        except Exception as exc:
+            raise OutputExecutionError(
+                f"failed to write planned output {planned.path}",
+                field_path=f"outputs[{output_index}]",
+                details={"path": str(planned.path)},
+            ) from exc
 
     return created_files
+
+
+def _execute_planned_output(
+    planned: PlannedOutput,
+) -> Path:
+    original = planned.original
+
+    if planned.format == "xlsx" and planned.tables:
+        prepared_tables = [
+            ResultTable(
+                name=planned_table.sheet_name,
+                headers=planned_table.original.headers,
+                rows=planned_table.original.rows,
+            )
+            for planned_table in planned.tables
+        ]
+
+        return save_xlsx_tables(
+            tables=prepared_tables,
+            output_path=planned.path,
+        )
+
+    return save_output(
+        content=original.content or "",
+        output_path=planned.path,
+        title=original.title,
+    )

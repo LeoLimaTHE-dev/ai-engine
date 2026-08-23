@@ -12,6 +12,7 @@ from ai_engine.exporters import save_text, save_xlsx_tables
 from ai_engine.results import OutputRequest, ResultTable, StructuredResult
 from ai_engine.session import ConversationMessage, ConversationSession
 from ai_engine.structured import parse_structured_result
+from ai_engine.structured_errors import OutputValidationError
 
 
 chat_module = importlib.import_module("ai_engine.chat")
@@ -361,7 +362,7 @@ def test_existing_output_is_currently_overwritten(tmp_path):
     assert path.read_text(encoding="utf-8") == "new"
 
 
-def test_structural_failure_currently_leaves_previous_output_and_stops_later_ones(
+def test_structural_failure_is_now_detected_before_any_output_is_written(
     tmp_path,
 ):
     result = StructuredResult(
@@ -373,10 +374,11 @@ def test_structural_failure_currently_leaves_previous_output_and_stops_later_one
         ],
     )
 
-    with pytest.raises(ValueError, match="Unsupported output format: csv"):
+    with pytest.raises(OutputValidationError, match="unsupported format 'csv'"):
         execute_structured_result(result, tmp_path)
 
-    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "A"
+    # Preflight planning replaced the historical partial-write behavior.
+    assert not (tmp_path / "a.txt").exists()
     assert not (tmp_path / "b.csv").exists()
     assert not (tmp_path / "c.txt").exists()
 
