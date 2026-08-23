@@ -22,6 +22,7 @@ from google.genai._gaos.lib.compat_errors import (
 from ai_engine.config import get_provider_timeout_seconds
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
+from ai_engine.structured_schema import get_structured_result_json_schema
 from ai_engine.usage import (
     UsageRecord,
     log_usage,
@@ -167,17 +168,41 @@ def _call_gemini(operation: Callable[[], ResultT]) -> ResultT:
         raise _normalize_gemini_error(exc) from exc
 
 
-def ask_gemini(prompt: str) -> str:
+def _structured_response_format() -> dict[str, object]:
+    return {
+        "type": "text",
+        "mime_type": "application/json",
+        "schema": get_structured_result_json_schema(),
+    }
+
+
+def _ensure_native_structured_interaction(interaction: object) -> None:
+    status = getattr(interaction, "status", None)
+
+    if status is not None and status != "completed":
+        raise ProviderRequestError(
+            provider="gemini",
+            message=f"Gemini structured interaction has status {status!r}.",
+            error_code=f"interaction_{status}",
+            retryable=False,
+            details=getattr(interaction, "errors", None),
+        )
+
+
+def ask_gemini(prompt: str, *, native_structured: bool = False) -> str:
     client = genai.Client(http_options=_gemini_http_options())
 
     model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
-    interaction = _call_gemini(
-        lambda: client.interactions.create(
-            model=model,
-            input=prompt,
-        )
-    )
+    request = {
+        "model": model,
+        "input": prompt,
+    }
+
+    if native_structured:
+        request["response_format"] = _structured_response_format()
+
+    interaction = _call_gemini(lambda: client.interactions.create(**request))
 
     usage = interaction.usage
 
@@ -194,12 +219,17 @@ def ask_gemini(prompt: str) -> str:
             )
         )
 
+    if native_structured:
+        _ensure_native_structured_interaction(interaction)
+
     return interaction.output_text
 
 
 def ask_gemini_document(
     document: DocumentContent,
     prompt: str,
+    *,
+    native_structured: bool = False,
 ) -> str:
     client = genai.Client(http_options=_gemini_http_options())
 
@@ -241,12 +271,15 @@ DOCUMENT CONTENT:
             }
         )
 
-    interaction = _call_gemini(
-        lambda: client.interactions.create(
-            model=model,
-            input=inputs,
-        )
-    )
+    request = {
+        "model": model,
+        "input": inputs,
+    }
+
+    if native_structured:
+        request["response_format"] = _structured_response_format()
+
+    interaction = _call_gemini(lambda: client.interactions.create(**request))
 
     usage = interaction.usage
 
@@ -262,5 +295,8 @@ DOCUMENT CONTENT:
                 total_tokens=(usage.total_tokens or 0),
             )
         )
+
+    if native_structured:
+        _ensure_native_structured_interaction(interaction)
 
     return interaction.output_text
