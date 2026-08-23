@@ -7,6 +7,9 @@ arquivos estruturados com OpenAI, Anthropic/Claude ou Gemini/Google.
 
 Requisitos: Python 3.14+ e [uv](https://docs.astral.sh/uv/).
 
+Para uso cotidiano, dê dois cliques em `C:\IA\Iniciar IA.bat`. Para executar
+manualmente ou diagnosticar a inicialização:
+
 ```powershell
 cd C:\IA\api
 uv sync
@@ -43,6 +46,10 @@ raiz operacional.
 
 ## Uso interativo
 
+Na criação de uma sessão, o fluxo é provider -> template opcional -> entrada.
+`[0] Nenhum — conversa normal` é o default, inclusive ao pressionar Enter. O
+template escolhido é salvo pelo filename e reaplicado ao restaurar a sessão.
+
 A CLI pergunta se a resposta deve gerar arquivos. Essa decisão vira
 `expect_outputs`:
 
@@ -51,6 +58,21 @@ A CLI pergunta se a resposta deve gerar arquivos. Essa decisão vira
 
 Para mensagens com várias linhas, digite `multiline` (ou `multi`), cole o
 conteúdo e finalize com uma linha contendo somente `/fim`.
+
+## Templates externos
+
+`C:\IA\4_Prompts` contém uma biblioteca opcional de instruções reutilizáveis:
+
+- `resumir.md`: síntese objetiva com preservação dos fatos;
+- `analisar_documentos.md`: correlação de fatos, divergências e lacunas;
+- `comparar_arquivos.md`: comparação de informações equivalentes;
+- `relatorio_multimodal_com_imagens.md`: relatório com referências manuais de
+  imagens.
+
+Templates oficiais usam `# Nome humano` e `> Descrição: ...`. Arquivos sem essa
+metadata não aparecem no menu. Se um template salvo desaparecer, a restauração
+avisa, muda a sessão para Nenhum e salva a correção. Não há troca de template
+durante o chat na v1. Se estiver em dúvida, escolha Nenhum.
 
 ## Structured output
 
@@ -81,5 +103,5 @@ A inserção física automática de imagens em DOCX/PDF permanece fora da v1.
 uv run pytest -q
 ```
 
-Baseline documental da v1: `832 passed, 0 failed, 1 warning`. A suíte padrão é
+Baseline documental da v1: `866 passed, 0 failed, 1 warning`. A suíte padrão é
 offline e não executa os smokes reais em `tests/smoke/`.

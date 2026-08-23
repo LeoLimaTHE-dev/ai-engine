@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 from ai_engine.models import DocumentContent
 
+from .prompts import validate_prompt_template_filename
+
 
 @dataclass
 class ConversationMessage:
@@ -14,6 +16,8 @@ class ConversationSession:
     provider: str
     documents: list[DocumentContent]
 
+    prompt_template: str | None = None
+
     messages: list[ConversationMessage] = field(default_factory=list)
 
     summary: str = ""
@@ -24,6 +28,11 @@ class ConversationSession:
     # are temporarily stored here until they
     # are summarized.
     pending_summary: list[ConversationMessage] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.prompt_template = validate_prompt_template_filename(
+            self.prompt_template
+        )
 
     def add_user_message(
         self,

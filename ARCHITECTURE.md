@@ -17,7 +17,7 @@ Este documento descreve apenas o que existe atualmente em `src/ai_engine`.
 | Guardrails e telemetria | `limits.py`, `usage.py` | Estimativa/confirmação prévia e log de tokens reportados. |
 | Conversa e persistência | `chat.py`, `session.py`, `sessions.py` | Histórico local, compactação, troca de provider e JSON de sessão. |
 | Texto sem documentos | `router.py` | Carrega ambiente e roteia prompts simples ao provider. |
-| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 832 testes no checkpoint de 23/08/2026, sem chamadas reais a providers. |
+| Testes offline | `tests/test_*_offline.py` | Suíte de regressão automatizada com pytest e 866 testes no checkpoint de 23/08/2026, sem chamadas reais a providers. |
 | Smoke tests | `tests/smoke/` | Verificações manuais com providers reais, protegidas contra execução durante importação e fora da coleta padrão. |
 
 ## API pública raiz
@@ -30,6 +30,7 @@ sessões, o contrato inclui os tipos `OperationalPaths`, `PreflightReport` e
 - `get_paths()` e `load_documents()`;
 - `analyze_documents()` e `format_preflight()`;
 - `build_summary_prompt()` e `summarize_session()`;
+- `PromptTemplate`, `discover_prompt_templates()` e `load_prompt()`;
 - `execute_structured_result()`;
 - `get_usage_totals()`, `usage_difference()` e `format_usage_summary()`.
 
@@ -165,7 +166,17 @@ O prompt contém a instrução e `document.to_text()`. Imagens são anexadas sep
 
 `run_workflow()` coleta e lê um caminho; `run_workflow_documents()` recebe documentos já carregados, evitando releitura após preflight externo. `build_prompt()` exige instrução livre não vazia. Opcionalmente, `load_prompt()` carrega um caminho existente ou procura `.md`/`.txt` em `get_paths().prompts_dir`, concatenando template e instrução específica.
 
+`discover_prompt_templates()` expõe para a aplicação somente arquivos com as
+duas primeiras linhas `# Nome humano` e `> Descrição: ...`, ordenados pelo nome.
+Arquivos sem metadata continuam carregáveis explicitamente, mas ficam fora do
+menu. `load_prompt()` remove metadata válida antes de devolver as instruções.
+
 Os equivalentes estruturados acrescentam o contrato textual de outputs e convertem a resposta para `StructuredResult`.
+
+Na aplicação, nova sessão segue provider -> template opcional -> entrada.
+Enter/`0` significa Nenhum. A escolha só ocorre na criação e o filename é
+persistido. Na restauração, template ausente gera aviso, fallback para `None` e
+save corretivo; não há troca durante o chat.
 
 Quando `expect_outputs=True`, `workflow.py` consulta
 `provider_capabilities.py` com o provider normalizado e o modelo documental
@@ -215,6 +226,10 @@ com `format_preflight()`. A aplicação o apresenta e pede autorização em
 demais casos aceita `s`, `sim`, `y` ou `yes`. Preflight não está conectado
 automaticamente a workflow ou chat.
 
+Quando a sessão possui template, a aplicação inclui seu conteúdo efetivo no
+texto estimado pelo preflight. A compactação de memória continua independente
+e não recebe o template da sessão.
+
 `ai_engine.limits.confirm_preflight()` mantém a política interativa antiga para
 compatibilidade com consumidores existentes, mas não integra a API pública raiz
 nem `ai_engine.__all__`.
@@ -225,7 +240,7 @@ Cada adaptador registra usage após uma resposta remota válida. `UsageRecord` c
 
 ## Chat contínuo e memória compactada
 
-`ConversationSession` guarda provider, documentos, mensagens recentes, resumo e `pending_summary`. `chat()` monta prompt com resumo/histórico/pedido, executa workflow estruturado nos documentos e só então adiciona usuário e `result.message` ao histórico. Uma falha definitiva de provider não cria turno fictício. A continuidade vem do reenvio do contexto local, não de estado remoto.
+`ConversationSession` guarda provider, documentos, `prompt_template`, mensagens recentes, resumo e `pending_summary`. `chat()` monta prompt com resumo/histórico/pedido, encaminha o filename opcional ao workflow e só então adiciona usuário e `result.message` ao histórico. Uma falha definitiva de provider não cria turno fictício. A continuidade vem do reenvio do contexto local, não de estado remoto.
 
 Acima de `max_history_messages` (10), mensagens antigas migram para `pending_summary`. Ao atingir `summary_batch_size` (4), `summarize_session()` pode fazer uma chamada textual separada combinando resumo anterior e pendências; somente depois de sucesso substitui o resumo e limpa a fila. Falha na compactação preserva o resumo, as pendências e a sessão anteriores.
 
@@ -237,16 +252,20 @@ A compactação não ocorre dentro de `chat()`. Enquanto não resumidas, mensage
 
 ## Sessões persistentes
 
-`save_session()` grava JSON com nome, provider, `input_path`, resumo, limites de memória, mensagens e pendências em `get_paths().sessions_dir` por padrão. Há listagem, leitura e remoção. Um `sessions_dir` explícito prevalece.
+`save_session()` grava JSON com nome, provider, `prompt_template` opcional,
+`input_path`, resumo, limites de memória, mensagens e pendências em
+`get_paths().sessions_dir` por padrão. Somente o filename `.md`/`.txt` é
+persistido. Sessões antigas sem a chave restauram `None`. Há listagem, leitura
+e remoção. Um `sessions_dir` explícito prevalece.
 
 `restore_conversation_session(data, documents)` exige documentos já carregados: o JSON guarda o caminho, não bytes ou `DocumentContent`. A camada chamadora precisa recarregar os documentos.
 
 ## Testes automatizados offline
 
-A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. No checkpoint de 23/08/2026, `uv run pytest -q` executou 832 testes da suíte offline, todos passando, com um warning interno do `google-genai`. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
+A coleta padrão do pytest está configurada em `pyproject.toml` para descobrir somente arquivos `test_*_offline.py`. No checkpoint de 23/08/2026, `uv run pytest -q` executou 866 testes da suíte offline, todos passando, com um warning interno do `google-genai`. A suíte usa arquivos temporários, fakes, mocks e monkeypatch e cobre contratos observáveis de:
 
 - models e readers;
-- batch, workflow e prompts;
+- batch, workflow, descoberta/menu de prompts e metadata;
 - structured outputs, actions e exporters;
 - limits/preflight e usage tracking;
 - chat, memória compactada e sessões persistentes;
@@ -303,4 +322,8 @@ O caminho textual é separado: `ask_ai()` usa `router.py` para selecionar
 `ask_gemini()`, `ask_openai()` ou `ask_anthropic()`. Ele é usado, por exemplo,
 na compactação da memória e não participa do roteamento de `ask_document()`.
 
-No chat, `session.documents` volta ao workflow e resumo/histórico entram no prompt. Persistência serializa somente estado textual e caminho de entrada; a restauração recarrega documentos fora do módulo de sessões.
+No chat, `session.documents` volta ao workflow e resumo/histórico entram no
+prompt. O filename de template opcional também é encaminhado, enquanto a
+compactação permanece sem template. Persistência serializa somente estado
+textual, filename opcional e caminho de entrada; a restauração recarrega
+documentos fora do módulo de sessões.

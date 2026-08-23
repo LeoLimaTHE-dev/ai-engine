@@ -12,7 +12,7 @@ contexto local e produz TXT, MD, DOCX, PDF e XLSX pelo contrato estruturado.
 Baseline deste checkpoint:
 
 ```text
-832 passed, 0 failed, 1 warning
+866 passed, 0 failed, 1 warning
 ```
 
 O warning é um `DeprecationWarning` interno do `google-genai`. A suíte padrão é
@@ -131,9 +131,34 @@ paths operacionais usam `C:\IA`, com entrada convencional em
 `C:\IA\2_Entrada` (default da aplicação: `batch_teste`) e saída em
 `C:\IA\3_Saída`.
 
+Para uso cotidiano, `C:\IA\Iniciar IA.bat` entra no projeto e executa a
+aplicação via `uv`, sem sync, testes, Git ou configuração de credenciais.
+
 A CLI pergunta explicitamente se espera arquivos. O comando `multiline` (ou
 `multi`) inicia entrada multilinha e uma linha contendo apenas `/fim` encerra
 a mensagem.
+
+### Templates externos e sessões
+
+Na criação, o fluxo é provider -> template opcional -> entrada. Enter ou `0`
+seleciona `[0] Nenhum — conversa normal`. `discover_prompt_templates()` lista
+somente `.md`/`.txt` de `C:\IA\4_Prompts` com metadata válida:
+
+```text
+# Nome humano
+> Descrição: descrição curta
+```
+
+Os oficiais são `resumir.md`, `analisar_documentos.md`,
+`comparar_arquivos.md` e `relatorio_multimodal_com_imagens.md`.
+`ConversationSession.prompt_template: str | None` persiste apenas o filename;
+sessões antigas usam `None`. Ao restaurar, um template válido é preservado sem
+nova pergunta. Se tiver desaparecido ou deixado de ser descobrível, a CLI
+avisa, muda para `None` e salva a correção.
+
+`load_prompt()` remove a metadata antes da composição. O conteúdo efetivo do
+template entra no preflight e na chamada principal, mas não na compactação
+interna. A v1 não permite trocar, criar, editar ou excluir templates no chat.
 
 ## Evidência manual separada
 
@@ -156,6 +181,15 @@ DOCX           PASS
 PDF            PASS
 ```
 
+Smokes manuais da integração de templates:
+
+- persistência sem provider: `Iniciar IA.bat` -> criar sessão -> selecionar
+  Resumir -> sair -> reabrir -> continuar -> `Template da sessão: Resumir`:
+  PASS;
+- aplicação real: OpenAI + Resumir + pergunta `O que tem aqui?`: a resposta
+  veio como síntese e preservou os fatos, apesar de o usuário não pedir resumo
+  explicitamente; uma chamada de API: PASS.
+
 Essas duas listas têm escopos diferentes. Não há evidência de que todos os
 formatos tenham sido testados nos três providers.
 
@@ -177,6 +211,8 @@ formatos tenham sido testados nos três providers.
 - Rollback transacional de escritas parciais.
 - Capability mais rica que a allowlist mínima da v1.
 - Evolução de sessões, scripts legados, batch paralelo e OCR local.
+- UX avançada de templates, como troca no chat, CRUD, categorias, favoritos,
+  busca ou seleção automática.
 
 ## Próximos passos para fechar a v1
 

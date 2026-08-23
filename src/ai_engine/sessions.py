@@ -7,6 +7,7 @@ from ai_engine.session import (
 )
 
 from .paths import get_paths
+from .prompts import validate_prompt_template_filename
 
 DEFAULT_SESSIONS_DIR = Path(r"C:\IA\6_Dados\sessions")
 
@@ -46,6 +47,7 @@ def save_session(
     input_path: str | Path,
     sessions_dir: str | Path | None = None,
 ) -> Path:
+    prompt_template = validate_prompt_template_filename(session.prompt_template)
     path = get_session_path(
         name=name,
         sessions_dir=sessions_dir,
@@ -59,6 +61,7 @@ def save_session(
     data = {
         "name": name,
         "provider": session.provider,
+        "prompt_template": prompt_template,
         "input_path": str(Path(input_path)),
         "summary": session.summary,
         "max_history_messages": (session.max_history_messages),
@@ -148,6 +151,7 @@ def restore_conversation_session(
     session = ConversationSession(
         provider=data["provider"],
         documents=documents,
+        prompt_template=data.get("prompt_template"),
         max_history_messages=data.get(
             "max_history_messages",
             10,

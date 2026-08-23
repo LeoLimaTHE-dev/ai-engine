@@ -87,14 +87,16 @@ camada de aplicação e aos scripts externos.
 
 ### `4_Prompts`
 
-Contém templates Markdown reutilizáveis para análise, comparação e resumo. O
-módulo `ai_engine.prompts` procura templates nessa pasta por default, e os
-workflows podem combiná-los com uma instrução específica do usuário.
+É a biblioteca opcional de templates `.md`/`.txt`. Os quatro oficiais são
+`resumir.md`, `analisar_documentos.md`, `comparar_arquivos.md` e
+`relatorio_multimodal_com_imagens.md`. Um template deve existir quando
+instruções estáveis se repetem entre tarefas, não apenas porque uma tarefa é
+possível; antes de criar outro, verifique sobreposição com os atuais.
 
-A conversa normal da aplicação não seleciona esses templates. Ela usa
-a mensagem livre do usuário, o contexto da sessão e as instruções estruturadas
-internas do engine. Portanto, `4_Prompts` participa apenas de fluxos que pedem
-explicitamente um `prompt_template`, inclusive alguns scripts manuais.
+`discover_prompt_templates()` inclui no menu somente arquivos iniciados por
+`# Nome humano` e `> Descrição: ...`. Arquivos sem metadata permanecem
+carregáveis explicitamente por `load_prompt()`, mas não aparecem. A metadata é
+removida das instruções efetivas enviadas ao modelo.
 
 ### `5_Modelos`
 
@@ -108,8 +110,8 @@ atual.
 Armazena estado operacional local:
 
 - `sessions\`: arquivos JSON com nome, provider, caminho de entrada, memória
-  resumida, parâmetros de memória, mensagens recentes e mensagens pendentes de
-  compactação;
+  resumida, filename opcional de template, parâmetros de memória, mensagens
+  recentes e mensagens pendentes de compactação;
 - `usage\`: CSV append-only com telemetria reportada pelos providers.
 
 Sessões não armazenam os documentos originais. Elas persistem `input_path`, e
@@ -152,7 +154,7 @@ Usuário
   |
   v
 api\application\ia_interativa.py
-  |-- escolhe provider e caminho de entrada
+  |-- escolhe provider, template opcional e caminho de entrada
   |-- carrega ou restaura uma sessão
   |-- coordena preflight e confirmação humana
   |-- mede usage antes/depois das operações
@@ -230,6 +232,7 @@ reconstruído e reenviado.
 
 - criação, seleção, restauração, salvamento e exclusão de sessões;
 - escolha e troca de provider;
+- seleção opcional de template somente na criação da sessão;
 - seleção de arquivo ou diretório de entrada;
 - recuperação de caminhos de sessão que foram movidos;
 - carregamento dos documentos por meio do engine;
@@ -245,6 +248,13 @@ reconstruído e reenviado.
   tipos e metadata comuns sem interpretar `429`, `quota` ou `rate limit` no
   texto da exceção. `details` não é impresso automaticamente.
 
+Na criação, o fluxo é provider -> template opcional -> entrada; Enter/`0`
+seleciona `[0] Nenhum — conversa normal`. Apenas o filename entra em
+`ConversationSession.prompt_template`. Sessões antigas restauram `None`; se um
+arquivo persistido desaparecer ou deixar de ser descobrível, a aplicação avisa,
+muda para `None` e salva a correção. O template entra no preflight e na chamada
+principal, mas não na compactação interna. Não há troca durante o chat na v1.
+
 A interface não implementa readers, adapters de provider ou exporters. Ela os
 coordena por meio da API pública raiz de `ai_engine`, usando exclusivamente um
 bloco `from ai_engine import (...)`.
@@ -259,6 +269,10 @@ uv run --project C:\IA\api python C:\IA\0_Scripts\ia_interativa.py
 O launcher não manipula `sys.path`, `PYTHONPATH`, `.venv`, uv ou a instalação
 editable. A resolução de `ai_engine` continua sendo responsabilidade do
 ambiente do projeto Python.
+
+Para uso cotidiano, `C:\IA\Iniciar IA.bat` entra em `C:\IA\api` e executa a
+aplicação via `uv`, sem lógica de negócio, sync, testes ou configuração de
+credenciais/modelos.
 
 ## Fronteira entre a interface e o engine
 
@@ -288,7 +302,9 @@ permanece interno. As operações públicas adicionais
 consumidas pela aplicação são `get_paths()`, `load_documents()`,
 `analyze_documents()`, `format_preflight()`, `build_summary_prompt()`,
 `summarize_session()`, `execute_structured_result()`, `get_usage_totals()`,
-`usage_difference()` e `format_usage_summary()`.
+`usage_difference()`, `format_usage_summary()`, `load_prompt()` e
+`discover_prompt_templates()`; `PromptTemplate` transporta filename, nome e
+descrição de apresentação.
 
 No preflight, o engine calcula e formata o `PreflightReport`. A aplicação
 apresenta o relatório e pede autorização ao usuário por meio de
@@ -470,7 +486,7 @@ e um contrato explícito com a aplicação.
 Nenhum arquivo precisa ser movido para iniciar a evolução arquitetural. A
 ordem segura é:
 
-1. preservar como baseline os 832 testes offline do checkpoint de 23/08/2026 e o comportamento de
+1. preservar como baseline os 866 testes offline do checkpoint de 23/08/2026 e o comportamento de
    `application\ia_interativa.py`;
 2. documentar o comando e o ambiente usados para tornar `ai_engine` importável
    pelos scripts externos;

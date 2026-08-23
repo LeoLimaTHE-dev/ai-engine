@@ -112,6 +112,7 @@ def chat(
         documents=session.documents,
         user_prompt=conversation_prompt,
         mode="auto",
+        prompt_template=session.prompt_template,
         expect_outputs=expect_outputs,
     )
 

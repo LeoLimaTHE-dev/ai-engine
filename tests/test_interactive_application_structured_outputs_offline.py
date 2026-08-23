@@ -31,6 +31,7 @@ class FakeSession:
         self.pending_summary = ["pending"]
         self.summary = "summary"
         self.should_update_summary = False
+        self.prompt_template = None
 
     def build_conversation_prompt(self, current_user_message):
         return current_user_message
@@ -168,6 +169,34 @@ def test_normal_turn_forwards_only_explicit_expect_outputs_choice(
 
     assert calls[0]["expect_outputs"] is expected
     assert sum("Espera arquivos" in prompt for prompt in prompts) == 1
+
+
+def test_preflight_includes_the_effective_session_template(monkeypatch):
+    session = FakeSession()
+    session.prompt_template = "analysis.md"
+    configure_run_chat(monkeypatch, ["pedido", "n", "sair"])
+    preflight_calls = []
+
+    monkeypatch.setattr(
+        ia_interativa,
+        "load_prompt",
+        lambda filename: "EFFECTIVE TEMPLATE INSTRUCTIONS",
+    )
+    monkeypatch.setattr(
+        ia_interativa,
+        "analyze_documents",
+        lambda **kwargs: preflight_calls.append(kwargs) or object(),
+    )
+    monkeypatch.setattr(
+        ia_interativa,
+        "chat",
+        lambda **kwargs: StructuredResult(message="Resposta"),
+    )
+
+    run_loop(session)
+
+    assert "EFFECTIVE TEMPLATE INSTRUCTIONS" in preflight_calls[0]["extra_text"]
+    assert "pedido" in preflight_calls[0]["extra_text"]
 
 
 @pytest.mark.parametrize(

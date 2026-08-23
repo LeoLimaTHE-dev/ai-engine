@@ -45,6 +45,7 @@ def test_session_persistence_round_trip_restores_all_textual_state(tmp_path):
     session = ConversationSession(
         provider="claude",
         documents=documents,
+        prompt_template="analisar_documentos.md",
         max_history_messages=6,
         summary_batch_size=2,
     )
@@ -71,6 +72,7 @@ def test_session_persistence_round_trip_restores_all_textual_state(tmp_path):
     assert data == {
         "name": "Session 1",
         "provider": "claude",
+        "prompt_template": "analisar_documentos.md",
         "input_path": str(input_path),
         "summary": "Compact memory",
         "max_history_messages": 6,
@@ -84,12 +86,60 @@ def test_session_persistence_round_trip_restores_all_textual_state(tmp_path):
         ],
     }
     assert restored.provider == "claude"
+    assert restored.prompt_template == "analisar_documentos.md"
     assert restored.documents is documents
     assert restored.summary == "Compact memory"
     assert restored.max_history_messages == 6
     assert restored.summary_batch_size == 2
     assert restored.messages == session.messages
     assert restored.pending_summary == session.pending_summary
+
+
+def test_new_session_defaults_to_no_prompt_template():
+    session = ConversationSession(provider="openai", documents=[])
+
+    assert session.prompt_template is None
+
+
+def test_session_serializes_none_prompt_template(tmp_path):
+    session = ConversationSession(provider="openai", documents=[])
+
+    save_session(
+        name="No template",
+        session=session,
+        input_path=tmp_path / "input",
+        sessions_dir=tmp_path,
+    )
+
+    assert load_session_data("No template", sessions_dir=tmp_path)[
+        "prompt_template"
+    ] is None
+
+
+def test_old_session_without_prompt_template_restores_with_none():
+    data = {
+        "provider": "gemini",
+        "input_path": "input",
+        "messages": [],
+        "pending_summary": [],
+    }
+
+    restored = restore_conversation_session(data, documents=[])
+
+    assert restored.prompt_template is None
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["", " analisar.md", "folder/analisar.md", r"folder\analisar.md", "prompt.json"],
+)
+def test_session_rejects_non_filename_prompt_template(invalid):
+    with pytest.raises(ValueError, match="must be a .md or .txt filename"):
+        ConversationSession(
+            provider="openai",
+            documents=[],
+            prompt_template=invalid,
+        )
 
 
 def test_list_sessions_returns_empty_for_missing_directory(tmp_path):

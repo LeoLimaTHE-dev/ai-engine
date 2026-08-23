@@ -8,10 +8,12 @@ from ai_engine import (
     ProviderRateLimitError,
     ProviderRequestError,
     ProviderTimeoutError,
+    PromptTemplate,
     analyze_documents,
     build_summary_prompt,
     chat,
     delete_session,
+    discover_prompt_templates,
     execute_structured_result,
     format_preflight,
     format_usage_summary,
@@ -19,6 +21,7 @@ from ai_engine import (
     get_usage_totals,
     list_sessions,
     load_documents,
+    load_prompt,
     load_session_data,
     restore_conversation_session,
     save_session,
@@ -308,6 +311,74 @@ def change_session_provider(
 
 
 # ============================================================
+# PROMPT TEMPLATES
+# ============================================================
+
+
+def choose_prompt_template() -> PromptTemplate | None:
+    templates = discover_prompt_templates()
+
+    print()
+    print("Template para esta sessão:")
+    print()
+    print("[0] Nenhum — conversa normal")
+
+    for index, template in enumerate(templates, start=1):
+        print(f"[{index}] {template.name}")
+        print(f"    {template.description}")
+
+    if not templates:
+        print()
+        print("Template selecionado: Nenhum")
+        return None
+
+    while True:
+        print()
+        choice = input("Escolha [0]: ").strip()
+
+        if choice in ("", "0"):
+            print()
+            print("Template selecionado: Nenhum")
+            return None
+
+        if choice.isdigit():
+            index = int(choice)
+
+            if 1 <= index <= len(templates):
+                selected = templates[index - 1]
+                print()
+                print(f"Template selecionado: {selected.name}")
+                return selected
+
+        print("Escolha inválida. Tente novamente.")
+
+
+def restore_session_prompt_template(
+    session: ConversationSession,
+) -> PromptTemplate | None:
+    filename = session.prompt_template
+
+    if filename is None:
+        return None
+
+    templates_by_filename = {
+        template.filename: template for template in discover_prompt_templates()
+    }
+    template = templates_by_filename.get(filename)
+
+    if template is None:
+        print()
+        print(f'Aviso: o template "{filename}" não foi encontrado.')
+        print("A sessão continuará sem template.")
+        session.prompt_template = None
+        return None
+
+    print()
+    print(f"Template da sessão: {template.name}")
+    return template
+
+
+# ============================================================
 # INPUT
 # ============================================================
 
@@ -371,6 +442,26 @@ def print_operation_usage(
     print(format_usage_summary(usage))
 
 
+def build_preflight_prompt(
+    session: ConversationSession,
+    conversation_prompt: str,
+) -> str:
+    if session.prompt_template is None:
+        return conversation_prompt
+
+    template = load_prompt(session.prompt_template)
+
+    return f"""
+{template}
+
+---
+
+INSTRUÇÃO ESPECÍFICA DO USUÁRIO:
+
+{conversation_prompt}
+""".strip()
+
+
 # ============================================================
 # SESSION CREATION / RESTORE
 # ============================================================
@@ -394,6 +485,8 @@ def create_new_session():
 
     provider = choose_provider()
 
+    prompt_template = choose_prompt_template()
+
     input_path = choose_input()
 
     print()
@@ -406,6 +499,9 @@ def create_new_session():
     session = ConversationSession(
         provider=provider,
         documents=documents,
+        prompt_template=(
+            prompt_template.filename if prompt_template is not None else None
+        ),
     )
 
     saved_path = save_session(
@@ -492,6 +588,8 @@ def restore_saved_session():
         data=data,
         documents=documents,
     )
+
+    restore_session_prompt_template(session)
 
     # Update saved path in case it had moved.
     save_session(
@@ -853,9 +951,14 @@ def run_chat(
             current_user_message=(user_message),
         )
 
+        preflight_prompt = build_preflight_prompt(
+            session=session,
+            conversation_prompt=conversation_prompt,
+        )
+
         report = analyze_documents(
             documents=session.documents,
-            extra_text=conversation_prompt,
+            extra_text=preflight_prompt,
         )
 
         print()

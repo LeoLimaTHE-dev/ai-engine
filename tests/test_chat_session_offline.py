@@ -10,6 +10,7 @@ from ai_engine.results import OutputRequest, StructuredResult
 from ai_engine.session import ConversationMessage, ConversationSession
 
 chat_module = importlib.import_module("ai_engine.chat")
+workflow_module = importlib.import_module("ai_engine.workflow")
 
 
 def make_documents():
@@ -231,14 +232,15 @@ def test_summarize_session_does_nothing_before_batch_is_ready(monkeypatch):
 
 def test_summarize_session_uses_provider_and_clears_pending_summary(monkeypatch):
     session = make_session(summary_batch_size=2)
+    session.prompt_template = "resumir.md"
     session.pending_summary = [
         ConversationMessage(role="user", content="Old question"),
         ConversationMessage(role="assistant", content="Old answer"),
     ]
     calls = []
 
-    def fake_ask_ai(provider, prompt):
-        calls.append((provider, prompt))
+    def fake_ask_ai(**kwargs):
+        calls.append(kwargs)
         return "  Updated compact memory  "
 
     monkeypatch.setattr(chat_module, "ask_ai", fake_ask_ai)
@@ -247,8 +249,9 @@ def test_summarize_session_uses_provider_and_clears_pending_summary(monkeypatch)
 
     assert result == "  Updated compact memory  "
     assert len(calls) == 1
-    assert calls[0][0] == "openai"
-    assert "Old question" in calls[0][1]
+    assert calls[0]["provider"] == "openai"
+    assert "Old question" in calls[0]["prompt"]
+    assert "prompt_template" not in calls[0]
     assert session.summary == "Updated compact memory"
     assert session.pending_summary == []
 
@@ -279,11 +282,69 @@ def test_chat_adds_current_turn_only_after_successful_workflow(monkeypatch):
     assert calls[0]["provider"] == "openai"
     assert calls[0]["documents"] is session.documents
     assert calls[0]["mode"] == "auto"
+    assert calls[0]["prompt_template"] is None
     assert "CURRENT USER REQUEST:\n\nCurrent question" in calls[0]["user_prompt"]
     assert session.messages[-2:] == [
         ConversationMessage(role="user", content="Current question"),
         ConversationMessage(role="assistant", content="Current answer"),
     ]
+
+
+def test_chat_forwards_session_prompt_template_to_workflow(monkeypatch):
+    session = make_session()
+    session.prompt_template = "analisar_documentos.md"
+    calls = []
+
+    monkeypatch.setattr(
+        chat_module,
+        "run_structured_workflow_documents",
+        lambda **kwargs: calls.append(kwargs) or StructuredResult(message="Answer"),
+    )
+
+    chat_module.chat(session, "Analyze")
+
+    assert calls[0]["prompt_template"] == "analisar_documentos.md"
+
+
+def test_chat_template_is_loaded_by_the_workflow(monkeypatch, tmp_path):
+    prompts_dir = tmp_path / "4_Prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "analysis.md").write_text(
+        "# Analysis\n"
+        "> Descrição: Menu metadata.\n\n"
+        "EFFECTIVE TEMPLATE INSTRUCTIONS",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("IA_ROOT", str(tmp_path))
+    session = make_session(prompt_template="analysis.md")
+    calls = []
+
+    monkeypatch.setattr(
+        workflow_module,
+        "ask_document",
+        lambda **kwargs: calls.append(kwargs) or "Normal answer",
+    )
+
+    result = chat_module.chat(session, "Analyze")
+
+    assert result.message == "Normal answer"
+    assert "EFFECTIVE TEMPLATE INSTRUCTIONS" in calls[0]["prompt"]
+    assert "Menu metadata" not in calls[0]["prompt"]
+
+
+def test_missing_session_template_fails_before_provider_call(monkeypatch, tmp_path):
+    (tmp_path / "4_Prompts").mkdir()
+    monkeypatch.setenv("IA_ROOT", str(tmp_path))
+    session = make_session(prompt_template="missing.md")
+
+    monkeypatch.setattr(
+        workflow_module,
+        "ask_document",
+        lambda **kwargs: pytest.fail("provider adapter must not be called"),
+    )
+
+    with pytest.raises(FileNotFoundError, match="Prompt not found: missing.md"):
+        chat_module.chat(session, "Analyze")
 
 
 @pytest.mark.parametrize(

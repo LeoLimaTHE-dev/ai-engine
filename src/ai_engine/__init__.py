@@ -15,7 +15,7 @@ from .providers.errors import (
     ProviderRequestError,
     ProviderTimeoutError,
 )
-from .prompts import load_prompt
+from .prompts import PromptTemplate, discover_prompt_templates, load_prompt
 from .results import StructuredResult
 from .router import ask_ai
 from .session import (
@@ -42,6 +42,7 @@ __all__ = [
     "ask_ai",
     "ask_document",
     "combine_documents",
+    "discover_prompt_templates",
     "load_prompt",
     "process_batch_consolidated",
     "process_batch_individual",
@@ -59,6 +60,7 @@ __all__ = [
     "save_session",
     "OperationalPaths",
     "PreflightReport",
+    "PromptTemplate",
     "ProviderConnectionError",
     "ProviderError",
     "ProviderRateLimitError",

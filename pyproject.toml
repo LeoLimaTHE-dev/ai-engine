@@ -1,6 +1,6 @@
 [project]
 name = "ai-engine"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local multi-provider AI engine"
 readme = "README.md"
 authors = [
