@@ -84,9 +84,14 @@ def summarize_session(
 def chat(
     session: ConversationSession,
     user_message: str,
+    *,
+    expect_outputs: bool = False,
 ) -> StructuredResult:
     """
     Executes one normal conversational API turn.
+
+    expect_outputs explicitly controls whether the workflow requires the
+    structured JSON contract; message text is never used to infer it.
 
     Memory compaction is intentionally NOT performed
     here because the interface must ask permission
@@ -107,6 +112,7 @@ def chat(
         documents=session.documents,
         user_prompt=conversation_prompt,
         mode="auto",
+        expect_outputs=expect_outputs,
     )
 
     session.add_user_message(user_message)

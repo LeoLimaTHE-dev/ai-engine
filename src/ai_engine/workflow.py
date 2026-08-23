@@ -215,12 +215,16 @@ def run_structured_workflow_documents(
     user_prompt: str,
     mode: str = "auto",
     prompt_template: str | Path | None = None,
+    *,
+    expect_outputs: bool = False,
 ) -> StructuredResult:
     """
     Structured workflow using documents that have
     already been loaded.
 
     Allows the AI to request supported output files.
+    When expect_outputs is true, the response must satisfy the structured
+    JSON contract. The default also accepts textual responses.
     """
 
     if not documents:
@@ -259,7 +263,10 @@ USER REQUEST:
             prompt=final_prompt,
         )
 
-        return parse_structured_result(raw_response)
+        return parse_structured_result(
+            raw_response,
+            expect_outputs=expect_outputs,
+        )
 
     # Several documents + consolidated analysis.
     if resolved_mode == "consolidated":
@@ -269,7 +276,10 @@ USER REQUEST:
             prompt=final_prompt,
         )
 
-        return parse_structured_result(raw_response)
+        return parse_structured_result(
+            raw_response,
+            expect_outputs=expect_outputs,
+        )
 
     # Explicit individual mode with several files.
     # Each response is parsed independently and then
@@ -284,7 +294,10 @@ USER REQUEST:
     outputs = []
 
     for filename, raw_response in raw_results.items():
-        parsed = parse_structured_result(raw_response)
+        parsed = parse_structured_result(
+            raw_response,
+            expect_outputs=expect_outputs,
+        )
 
         if parsed.message:
             messages.append(f"{filename}:\n{parsed.message}")
@@ -303,10 +316,14 @@ def run_structured_workflow(
     user_prompt: str,
     mode: str = "auto",
     prompt_template: str | Path | None = None,
+    *,
+    expect_outputs: bool = False,
 ) -> StructuredResult:
     """
     Convenience structured workflow that reads
     the input before processing.
+
+    expect_outputs is forwarded explicitly to the in-memory workflow.
     """
 
     documents = load_documents(input_path)
@@ -317,4 +334,5 @@ def run_structured_workflow(
         user_prompt=user_prompt,
         mode=mode,
         prompt_template=prompt_template,
+        expect_outputs=expect_outputs,
     )

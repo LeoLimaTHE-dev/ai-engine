@@ -229,12 +229,14 @@ def test_legacy_mode_still_exposes_type_error_for_null_table_collection(field):
         parse_structured_result(raw_response)
 
 
-def test_no_current_consumer_passes_expect_outputs_true():
+def test_only_workflow_and_chat_control_expect_outputs():
     project_root = Path(__file__).resolve().parents[1]
     source_paths = [
         *project_root.joinpath("src", "ai_engine").rglob("*.py"),
         *project_root.joinpath("application").rglob("*.py"),
     ]
+
+    consumers = set()
 
     for source_path in source_paths:
         if source_path.name == "structured.py":
@@ -245,4 +247,7 @@ def test_no_current_consumer_passes_expect_outputs_true():
             if not isinstance(node, ast.Call):
                 continue
             for keyword in node.keywords:
-                assert keyword.arg != "expect_outputs", source_path
+                if keyword.arg == "expect_outputs":
+                    consumers.add(source_path.name)
+
+    assert consumers == {"chat.py", "workflow.py"}
