@@ -97,6 +97,95 @@ def test_choose_input_still_allows_user_override(monkeypatch, tmp_path):
     assert module.choose_input() == chosen_path
 
 
+def test_choose_input_explains_documentless_default(monkeypatch, tmp_path):
+    module = load_interface(
+        monkeypatch,
+        "ia_interativa_documentless_prompt_test",
+        root=tmp_path,
+    )
+    prompts = []
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt: prompts.append(prompt) or "",
+    )
+
+    assert module.choose_input() == module.DEFAULT_INPUT
+    assert "sem documentos se vazio" in prompts[0]
+
+
+def test_new_session_accepts_empty_default_directory_and_saves(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    module = load_interface(
+        monkeypatch,
+        "ia_interativa_documentless_creation_test",
+        root=tmp_path,
+    )
+    module.DEFAULT_INPUT.mkdir(parents=True)
+    answers = iter(["Text only session", ""])
+    saved = []
+    monkeypatch.setattr(builtins, "input", lambda prompt: next(answers))
+    monkeypatch.setattr(module, "choose_provider", lambda: "openai")
+    monkeypatch.setattr(module, "choose_prompt_template", lambda: None)
+    monkeypatch.setattr(
+        module,
+        "save_session",
+        lambda **kwargs: saved.append(kwargs) or tmp_path / "saved.json",
+    )
+
+    name, session, input_path = module.create_new_session()
+
+    assert name == "Text only session"
+    assert input_path == module.DEFAULT_INPUT
+    assert session.documents == []
+    assert saved[0]["session"] is session
+    assert saved[0]["input_path"] == module.DEFAULT_INPUT
+    output = capsys.readouterr().out
+    assert "Nenhum documento suportado encontrado." in output
+    assert "A sessão continuará somente com o chat." in output
+
+
+def test_restore_session_accepts_existing_empty_input_directory(
+    monkeypatch,
+    tmp_path,
+):
+    module = load_interface(
+        monkeypatch,
+        "ia_interativa_documentless_restore_test",
+        root=tmp_path,
+    )
+    input_path = tmp_path / "empty-input"
+    input_path.mkdir()
+    saved = []
+    monkeypatch.setattr(module, "select_existing_session_name", lambda: "Text only")
+    monkeypatch.setattr(
+        module,
+        "load_session_data",
+        lambda name: {
+            "provider": "openai",
+            "input_path": str(input_path),
+            "prompt_template": None,
+            "messages": [],
+            "pending_summary": [],
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "save_session",
+        lambda **kwargs: saved.append(kwargs) or tmp_path / "saved.json",
+    )
+
+    name, session, restored_path = module.restore_saved_session()
+
+    assert name == "Text only"
+    assert restored_path == input_path
+    assert session.documents == []
+    assert saved[0]["session"] is session
+
+
 def test_interface_uses_public_api_except_internal_structured_error_contract():
     tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
     engine_imports = [

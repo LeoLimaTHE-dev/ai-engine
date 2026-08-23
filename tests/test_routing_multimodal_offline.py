@@ -46,6 +46,37 @@ def test_ask_ai_rejects_unknown_provider():
 
 
 @pytest.mark.parametrize(
+    ("provider", "adapter_name"),
+    [
+        ("openai", "ask_openai"),
+        ("anthropic", "ask_anthropic"),
+        ("claude", "ask_anthropic"),
+        ("gemini", "ask_gemini"),
+        ("google", "ask_gemini"),
+    ],
+)
+def test_ask_ai_forwards_native_structured_to_text_adapters(
+    provider,
+    adapter_name,
+    monkeypatch,
+):
+    calls = []
+
+    def adapter(prompt, *, native_structured=False):
+        calls.append((prompt, native_structured))
+        return "structured response"
+
+    monkeypatch.setattr(router_module, adapter_name, adapter)
+
+    assert router_module.ask_ai(
+        provider,
+        "Create output",
+        native_structured=True,
+    ) == "structured response"
+    assert calls == [("Create output", True)]
+
+
+@pytest.mark.parametrize(
     ("provider", "expected_adapter"),
     [
         ("openai", "openai"),

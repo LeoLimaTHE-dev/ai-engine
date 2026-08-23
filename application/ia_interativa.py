@@ -388,7 +388,9 @@ def choose_input() -> Path:
 
     print(f"Entrada padrão: {DEFAULT_INPUT}")
 
-    value = input("Arquivo ou pasta [Enter = usar padrão]: ").strip()
+    value = input(
+        "Arquivo ou pasta [Enter = usar padrão/sem documentos se vazio]: "
+    ).strip()
 
     if not value:
         return DEFAULT_INPUT
@@ -492,9 +494,16 @@ def create_new_session():
     print()
     print("Carregando documentos...")
 
-    documents = load_documents(input_path)
+    documents = load_documents(
+        input_path,
+        allow_empty=True,
+    )
 
-    print(f"Documentos carregados: {len(documents)}")
+    if documents:
+        print(f"Documentos carregados: {len(documents)}")
+    else:
+        print("Nenhum documento suportado encontrado.")
+        print("A sessão continuará somente com o chat.")
 
     session = ConversationSession(
         provider=provider,
@@ -582,7 +591,10 @@ def restore_saved_session():
 
     print("Recarregando documentos...")
 
-    documents = load_documents(input_path)
+    documents = load_documents(
+        input_path,
+        allow_empty=True,
+    )
 
     session = restore_conversation_session(
         data=data,

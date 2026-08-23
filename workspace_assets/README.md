@@ -44,8 +44,8 @@ workspace_assets\Iniciar IA.bat
 workspace_assets\prompts\*
 -> C:\IA\4_Prompts\
 
-workspace_assets\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx
--> C:\IA\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx
+workspace_assets\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx
+-> C:\IA\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx
 ```
 
 O launcher versionado contém placeholders e não deve ser usado diretamente. O

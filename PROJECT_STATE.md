@@ -235,3 +235,12 @@ instalação reproduzível com o contrato `<Root>\api`:
 - `uv sync` é padrão, com `-SkipSync` para preparação offline.
 
 Detalhes operacionais estão em `SETUP_WORKSPACE.md`.
+
+## Sessões sem documentos — v1.1.1
+
+A aplicação interativa aceita sessões com `documents=[]`. Uma pasta válida sem
+arquivos suportados inicia chat textual, mantendo template, preflight, memória,
+structured output e persistência. `collect_files()` e os workflows
+programáticos baseados em path continuam estritos por default; a interface usa
+explicitamente `load_documents(..., allow_empty=True)`. Paths inexistentes e
+arquivos explicitamente não suportados continuam sendo erros.

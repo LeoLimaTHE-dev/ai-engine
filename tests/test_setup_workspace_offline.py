@@ -16,7 +16,8 @@ OFFICIAL_PROMPTS = (
     "comparar_arquivos.md",
     "relatorio_multimodal_com_imagens.md",
 )
-OFFICIAL_MANUAL = "Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx"
+OFFICIAL_MANUAL = "Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx"
+PREVIOUS_MANUAL = "Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx"
 
 
 def _powershell_executable() -> str:
@@ -200,6 +201,23 @@ def test_manual_conflict_is_preserved_then_force_restores_only_official_manual(
         repo / "workspace_assets" / OFFICIAL_MANUAL
     ).read_bytes()
     assert other_manual.read_bytes() == other_content
+
+
+def test_setup_never_removes_previous_release_manual(
+    portable_repo: tuple[Path, Path],
+) -> None:
+    root, repo = portable_repo
+    previous_manual = root / PREVIOUS_MANUAL
+    previous_content = b"manual historico da release anterior"
+    previous_manual.write_bytes(previous_content)
+
+    completed = _run_setup(root, repo, "-SkipSync", "-Force")
+
+    _assert_success(completed)
+    assert previous_manual.read_bytes() == previous_content
+    assert (root / OFFICIAL_MANUAL).read_bytes() == (
+        repo / "workspace_assets" / OFFICIAL_MANUAL
+    ).read_bytes()
 
 
 def test_second_execution_is_idempotent(

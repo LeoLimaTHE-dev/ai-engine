@@ -65,6 +65,18 @@ def test_analyze_documents_counts_text_and_extra_text(monkeypatch):
     assert with_extra.estimated_text_tokens == 5
 
 
+def test_analyze_documents_supports_text_only_preflight(monkeypatch):
+    set_limits(monkeypatch)
+
+    report = analyze_documents([], extra_text="text-only request")
+
+    assert report.file_count == 0
+    assert report.text_characters == len("text-only request")
+    assert report.image_count == 0
+    assert report.image_bytes == 0
+    assert report.errors == []
+
+
 def test_analyze_documents_counts_image_bytes_and_megabytes(monkeypatch):
     set_limits(monkeypatch)
     document = DocumentContent(
@@ -196,4 +208,3 @@ def test_confirm_preflight_above_limit_requires_exact_confirmation(
     report = make_confirmation_report(errors=["Maximum exceeded"])
 
     assert confirm_preflight(report) is expected
-

@@ -114,6 +114,14 @@ uv run --project C:\IA\api python C:\IA\0_Scripts\ia_interativa.py
 
 Ainda não existe entry point de console empacotado.
 
+Na v1.1.1, documentos passaram a ser opcionais na aplicação interativa. A
+criação e a restauração usam `load_documents(..., allow_empty=True)`: uma pasta
+válida vazia ou sem extensões suportadas produz `documents=[]` e segue para
+chat textual. O workflow usa o adapter textual, mantém templates e parser
+structured, e ativa native structured quando aplicável. Não relaxe
+`collect_files()` globalmente; paths inexistentes e arquivos explicitamente não
+suportados permanecem erros.
+
 ## Configuração e `.env`
 
 O `.env` fica em `C:\IA\api\.env`, não deve ser versionado e contém as

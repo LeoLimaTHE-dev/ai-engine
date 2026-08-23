@@ -7,7 +7,9 @@ do repositório. O contrato da v1.1.0 é:
 <Root>\api
 ```
 
-O setup não move nem duplica o repositório.
+O setup não move nem duplica o repositório. Esse fluxo foi introduzido na
+v1.1.0 e permanece inalterado na v1.1.1, que acrescenta sessões interativas sem
+documentos à aplicação.
 
 ## Pré-requisitos
 
@@ -64,7 +66,7 @@ rede e baixar Python ou dependências. Para preparar apenas diretórios e assets
 - diretórios de entrada, saída, prompts, sessões, usage e temporários;
 - diretórios organizacionais `1_Projetos` e `5_Modelos`;
 - os quatro prompts oficiais, a partir de `workspace_assets\prompts`;
-- `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`, a partir do manual
+- `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx`, a partir do manual
   humano versionado em `workspace_assets`;
 - `<Root>\Iniciar IA.bat`, com `IA_ROOT` e repo ajustados à instalação;
 - `.env`, copiado de `.env.example`, somente quando ainda não existe.
@@ -84,7 +86,9 @@ o launcher e o manual humano oficial:
 ```
 
 `-Force` nunca substitui `.env`, não remove prompts personalizados ou outros
-DOCX e não toca em entradas, saídas, sessões ou usage.
+DOCX e não toca em entradas, saídas, sessões ou usage. Ao atualizar da v1.1.0
+para a v1.1.1, o manual antigo pode permanecer ao lado do novo; o setup não o
+remove automaticamente.
 
 ## Idempotência
 
@@ -104,7 +108,7 @@ Preencha o `.env` e dê dois cliques em:
 O launcher define `IA_ROOT`, entra no repositório e inicia a aplicação com
 `uv`. Ele não sincroniza dependências, não roda testes e não altera Git.
 O manual humano instalado fica em
-`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`.
+`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx`.
 
 ## Troubleshooting
 

@@ -17,6 +17,7 @@ from .provider_capabilities import (
 from .prompts import load_prompt
 from .readers import read_documents
 from .results import StructuredResult
+from .router import ask_ai
 from .structured import parse_structured_result
 
 SUPPORTED_EXTENSIONS = {
@@ -74,12 +75,19 @@ def collect_files(
 
 def load_documents(
     input_path: str | Path,
+    *,
+    allow_empty: bool = False,
 ) -> list[DocumentContent]:
     """
     Collects and reads all supported files.
     """
 
-    files = collect_files(input_path)
+    try:
+        files = collect_files(input_path)
+    except ValueError:
+        if allow_empty and Path(input_path).is_dir():
+            return []
+        raise
 
     return read_documents(files)
 
@@ -231,9 +239,6 @@ def run_structured_workflow_documents(
     JSON contract. The default also accepts textual responses.
     """
 
-    if not documents:
-        raise ValueError("No documents were provided.")
-
     user_prompt = user_prompt.strip()
 
     if not user_prompt:
@@ -261,6 +266,18 @@ USER REQUEST:
         provider,
         model,
     )
+
+    if not documents:
+        raw_response = ask_ai(
+            provider=provider,
+            prompt=final_prompt,
+            native_structured=native_structured,
+        )
+
+        return parse_structured_result(
+            raw_response,
+            expect_outputs=expect_outputs,
+        )
 
     # One document can be sent directly.
     # This avoids wrapping a JSON answer inside

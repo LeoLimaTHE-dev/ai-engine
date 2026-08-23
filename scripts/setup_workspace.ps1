@@ -178,7 +178,7 @@ try {
             -Label "Prompt oficial"
     }
 
-    $manualName = "Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx"
+    $manualName = "Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx"
     $manualSource = Join-Path $repoDirectory "workspace_assets\$manualName"
     if (-not (Test-Path -LiteralPath $manualSource -PathType Leaf)) {
         throw "[ERRO] Manual oficial ausente: $manualSource"

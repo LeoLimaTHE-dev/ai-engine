@@ -87,6 +87,45 @@ def test_load_documents_reads_the_collected_files_in_order(monkeypatch):
     ]
 
 
+def test_load_documents_allows_empty_or_unsupported_directory_only_when_opted_in(
+    tmp_path,
+):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    unsupported = tmp_path / "unsupported"
+    unsupported.mkdir()
+    (unsupported / "notes.bin").write_bytes(b"not supported")
+
+    assert workflow_module.load_documents(empty, allow_empty=True) == []
+    assert workflow_module.load_documents(unsupported, allow_empty=True) == []
+
+    with pytest.raises(ValueError, match="No supported files found"):
+        workflow_module.load_documents(empty)
+
+
+def test_load_documents_allow_empty_preserves_real_path_and_file_errors(tmp_path):
+    missing = tmp_path / "missing"
+    unsupported = tmp_path / "input.bin"
+    unsupported.write_bytes(b"not supported")
+
+    with pytest.raises(FileNotFoundError, match="Input not found"):
+        workflow_module.load_documents(missing, allow_empty=True)
+
+    with pytest.raises(ValueError, match="Unsupported file type: .bin"):
+        workflow_module.load_documents(unsupported, allow_empty=True)
+
+
+def test_load_documents_allow_empty_still_reads_supported_files(tmp_path):
+    supported = tmp_path / "input.txt"
+    supported.write_text("document content", encoding="utf-8")
+
+    documents = workflow_module.load_documents(tmp_path, allow_empty=True)
+
+    assert len(documents) == 1
+    assert documents[0].source_path == supported
+    assert documents[0].text == "document content"
+
+
 def test_build_prompt_without_template_returns_trimmed_user_prompt():
     assert workflow_module.build_prompt("  Analyze this  ") == "Analyze this"
 

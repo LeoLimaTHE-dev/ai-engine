@@ -27,7 +27,7 @@ exemplo `D:\IA\api`:
 O setup cria a árvore operacional, instala launcher, prompts e o manual humano
 a partir de `workspace_assets`, cria `.env` somente se ausente e executa
 `uv sync`. O manual fica em
-`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`. Consulte
+`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx`. Consulte
 [`SETUP_WORKSPACE.md`](SETUP_WORKSPACE.md) para `-SkipSync`, `-Force` e a
 política não destrutiva.
 
@@ -74,6 +74,12 @@ raiz operacional.
 Na criação de uma sessão, o fluxo é provider -> template opcional -> entrada.
 `[0] Nenhum — conversa normal` é o default, inclusive ao pressionar Enter. O
 template escolhido é salvo pelo filename e reaplicado ao restaurar a sessão.
+
+A v1.1.1 adiciona sessões interativas sem documentos. Se uma pasta válida
+estiver vazia ou não tiver arquivos suportados, a sessão começa com zero
+documentos e funciona como chat textual. Paths inexistentes e arquivos
+explicitamente não suportados continuam sendo rejeitados. `collect_files()`
+permanece estrito por padrão; somente a interface ativa `allow_empty`.
 
 A CLI pergunta se a resposta deve gerar arquivos. Essa decisão vira
 `expect_outputs`:

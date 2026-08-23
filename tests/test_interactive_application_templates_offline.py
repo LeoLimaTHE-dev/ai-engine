@@ -123,7 +123,11 @@ def test_new_session_persists_selected_template(
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     monkeypatch.setattr(ia_interativa, "choose_provider", lambda: "openai")
     monkeypatch.setattr(ia_interativa, "choose_input", lambda: input_path)
-    monkeypatch.setattr(ia_interativa, "load_documents", lambda path: [])
+    monkeypatch.setattr(
+        ia_interativa,
+        "load_documents",
+        lambda path, **kwargs: [],
+    )
     monkeypatch.setattr(ia_interativa, "discover_prompt_templates", lambda: TEMPLATES)
     monkeypatch.setattr(
         ia_interativa,
@@ -160,7 +164,11 @@ def _configure_restore(monkeypatch, tmp_path, prompt_template, templates):
         lambda: "Existing",
     )
     monkeypatch.setattr(ia_interativa, "load_session_data", lambda name: data)
-    monkeypatch.setattr(ia_interativa, "load_documents", lambda path: [])
+    monkeypatch.setattr(
+        ia_interativa,
+        "load_documents",
+        lambda path, **kwargs: [],
+    )
     monkeypatch.setattr(
         ia_interativa,
         "discover_prompt_templates",

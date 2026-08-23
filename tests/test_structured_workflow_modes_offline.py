@@ -40,6 +40,72 @@ def run_single_document(monkeypatch, response, **kwargs):
     )
 
 
+def test_documentless_text_workflow_uses_text_adapter_and_template(
+    monkeypatch,
+    tmp_path,
+):
+    template = tmp_path / "template.md"
+    template.write_text("TEXT ONLY TEMPLATE", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        workflow_module,
+        "ask_ai",
+        lambda **kwargs: calls.append(kwargs) or "Text-only answer",
+    )
+
+    result = workflow_module.run_structured_workflow_documents(
+        provider="openai",
+        documents=[],
+        user_prompt="Brainstorm ideas",
+        prompt_template=template,
+    )
+
+    assert result == StructuredResult(message="Text-only answer")
+    assert calls[0]["provider"] == "openai"
+    assert calls[0]["native_structured"] is False
+    assert "TEXT ONLY TEMPLATE" in calls[0]["prompt"]
+    assert "Brainstorm ideas" in calls[0]["prompt"]
+
+
+def test_documentless_strong_mode_keeps_native_schema_and_parser(monkeypatch):
+    calls = []
+    response = json.dumps({"message": "Created", "outputs": []})
+    monkeypatch.setattr(
+        workflow_module,
+        "ask_ai",
+        lambda **kwargs: calls.append(kwargs) or response,
+    )
+
+    result = workflow_module.run_structured_workflow_documents(
+        provider="openai",
+        documents=[],
+        user_prompt="Create a result",
+        expect_outputs=True,
+    )
+
+    assert result == StructuredResult(message="Created")
+    assert len(calls) == 1
+    assert calls[0]["provider"] == "openai"
+    assert calls[0]["native_structured"] is True
+
+
+def test_chat_reaches_text_workflow_without_documents(monkeypatch):
+    session = ConversationSession(provider="openai", documents=[])
+    monkeypatch.setattr(
+        workflow_module,
+        "ask_ai",
+        lambda **kwargs: "Conversation answer",
+    )
+
+    result = chat_module.chat(session, "Hello without files")
+
+    assert result == StructuredResult(message="Conversation answer")
+    assert session.messages[-2:] == [
+        ConversationMessage(role="user", content="Hello without files"),
+        ConversationMessage(role="assistant", content="Conversation answer"),
+    ]
+
+
 def test_structured_workflow_default_uses_legacy_parser_mode(monkeypatch):
     result = run_single_document(monkeypatch, "Normal textual response")
 

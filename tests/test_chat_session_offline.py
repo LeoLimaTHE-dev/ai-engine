@@ -168,6 +168,15 @@ def test_change_provider_normalizes_aliases(provider, expected):
     assert session.provider == expected
 
 
+def test_change_provider_preserves_documentless_session():
+    session = ConversationSession(provider="openai", documents=[])
+
+    session.change_provider("google")
+
+    assert session.provider == "gemini"
+    assert session.documents == []
+
+
 def test_change_provider_without_history_clears_memory_but_keeps_documents():
     session = make_session()
     session.summary = "Summary"

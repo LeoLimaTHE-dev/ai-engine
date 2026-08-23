@@ -26,7 +26,7 @@ documentos do projeto têm papéis diferentes:
 `MANUAL_SOURCE.md` é a fonte oficial e viva do manual. O Guia em Word é um
 documento derivado para consulta humana, distribuído em `workspace_assets` e
 instalado pelo setup em
-`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`. O DOCX deve ser atualizado
+`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx`. O DOCX deve ser atualizado
 conscientemente a partir desta fonte; esta revisão não o modifica.
 
 ## 2. Voltei depois de meses — o que faço?
@@ -106,7 +106,7 @@ O setup:
 - cria a estrutura do workspace, sem apagar nem esvaziar pastas existentes;
 - copia os quatro prompts oficiais de `workspace_assets`;
 - instala o manual humano em
-  `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`;
+  `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx`;
 - gera `<Root>\Iniciar IA.bat` com os paths da instalação;
 - cria `<Root>\api\.env` a partir de `.env.example` somente se estiver ausente;
 - não lê nem substitui um `.env` existente;
@@ -220,7 +220,8 @@ Esse smoke não fez chamada a provider.
 3. escolha **Nova sessão** ou **Continuar sessão**;
 4. em uma sessão nova, escolha o provider que possui credencial configurada;
 5. escolha um template ou `[0] Nenhum — conversa normal`;
-6. indique um arquivo ou uma pasta de `<Root>\2_Entrada`;
+6. indique um arquivo ou uma pasta de `<Root>\2_Entrada`, ou pressione Enter
+   para usar a pasta padrão;
 7. converse normalmente, confirme o preflight quando quiser realizar a
    chamada e consulte os resultados em `<Root>\3_Saída`;
 8. digite `sair` no chat para salvar e encerrar normalmente.
@@ -229,6 +230,20 @@ Nenhum é o padrão, inclusive ao pressionar Enter. Se não souber qual template
 usar, escolha Nenhum. Templates servem para instruções estáveis que se repetem
 em tarefas diferentes; eles não são necessários para liberar capacidades da
 IA.
+
+Arquivo ou pasta é opcional para tarefas puramente textuais. Se a pasta padrão
+estiver vazia ou contiver apenas formatos não suportados, a aplicação informa
+que nenhum documento foi carregado e continua com o chat. Templates para
+Cineclube, revisão de texto, brainstorming e tarefas semelhantes não precisam
+de um `contexto.txt` artificial.
+
+Esse suporte foi adicionado na v1.1.1. A interface ativa explicitamente
+`allow_empty`; a coleta programática continua estrita por padrão.
+
+Uma pasta vazia informada explicitamente tem o mesmo comportamento. Um caminho
+inexistente ou um arquivo explicitamente não suportado continua produzindo erro
+apropriado; esses casos não são convertidos silenciosamente em uma sessão
+vazia.
 
 ### 3.5 Iniciar manualmente — troubleshooting e desenvolvimento
 
@@ -881,6 +896,7 @@ usar essa opção. O sync pode ser repetido normalmente ou omitido com
 
 - `v1.0.0` é o snapshot histórico congelado da primeira release;
 - `v1.1.0` adiciona a instalação reproduzível e portátil descrita neste manual;
+- `v1.1.1` adiciona sessões interativas sem documentos;
 - `V1_SNAPSHOT.md` continua descrevendo especificamente a v1.0.0;
 - documentos vivos, como este manual e `PROJECT_STATE.md`, acompanham a versão
   atual;
@@ -1115,7 +1131,7 @@ demais itens vêm da metadata dos arquivos oficiais.
 | `C:\IA\6_Dados\usage` | Registro CSV de usage. |
 | `C:\IA\7_Temporario` | Temporários operacionais. |
 | `C:\IA\api\workspace_assets` | Snapshot versionado do launcher e templates; não é operacional. |
-| `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx` | Manual humano instalado pelo setup. |
+| `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.1.docx` | Manual humano instalado pelo setup. |
 
 ### 19.9 Arquivos e documentos importantes
 
