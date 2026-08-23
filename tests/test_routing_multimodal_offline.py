@@ -99,6 +99,58 @@ def test_ask_document_rejects_unknown_provider():
         multimodal_module.ask_document("unknown", document, "Analyze")
 
 
+@pytest.mark.parametrize(
+    ("provider", "expected_adapter"),
+    [
+        ("openai", "openai"),
+        ("gemini", "gemini"),
+        ("google", "gemini"),
+        ("anthropic", "anthropic"),
+        ("claude", "anthropic"),
+    ],
+)
+def test_native_structured_is_forwarded_only_to_openai(
+    provider,
+    expected_adapter,
+    monkeypatch,
+):
+    document = DocumentContent(source_path=Path("document.txt"), text="Content")
+    calls = []
+
+    def fake_openai(document, prompt, *, native_structured=False):
+        calls.append(("openai", native_structured))
+        return "response"
+
+    def make_other_adapter(name):
+        def adapter(document, prompt):
+            calls.append((name, None))
+            return "response"
+
+        return adapter
+
+    monkeypatch.setattr(multimodal_module, "ask_openai_document", fake_openai)
+    monkeypatch.setattr(
+        multimodal_module,
+        "ask_gemini_document",
+        make_other_adapter("gemini"),
+    )
+    monkeypatch.setattr(
+        multimodal_module,
+        "ask_anthropic_document",
+        make_other_adapter("anthropic"),
+    )
+
+    multimodal_module.ask_document(
+        provider,
+        document,
+        "Analyze",
+        native_structured=True,
+    )
+
+    expected_flag = True if expected_adapter == "openai" else None
+    assert calls == [(expected_adapter, expected_flag)]
+
+
 def test_load_environment_uses_project_env_file(monkeypatch):
     calls = []
     monkeypatch.setattr(config_module, "load_dotenv", lambda path: calls.append(path))
@@ -106,4 +158,3 @@ def test_load_environment_uses_project_env_file(monkeypatch):
     config_module.load_environment()
 
     assert calls == [config_module.ENV_FILE]
-

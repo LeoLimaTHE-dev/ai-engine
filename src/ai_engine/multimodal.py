@@ -9,6 +9,8 @@ def ask_document(
     provider: str,
     document: DocumentContent,
     prompt: str,
+    *,
+    native_structured: bool = False,
 ) -> str:
     provider = provider.lower()
 
@@ -19,6 +21,13 @@ def ask_document(
         )
 
     if provider == "openai":
+        if native_structured:
+            return ask_openai_document(
+                document=document,
+                prompt=prompt,
+                native_structured=True,
+            )
+
         return ask_openai_document(
             document=document,
             prompt=prompt,

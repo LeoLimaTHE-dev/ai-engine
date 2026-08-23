@@ -68,6 +68,44 @@ def test_strong_workflow_accepts_valid_json(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("provider", "expect_outputs", "expected_native"),
+    [
+        ("openai", True, True),
+        ("OPENAI", True, True),
+        ("openai", False, False),
+        ("gemini", True, False),
+        ("google", True, False),
+        ("anthropic", True, False),
+        ("claude", True, False),
+    ],
+)
+def test_native_structured_activation_depends_only_on_openai_and_explicit_flag(
+    provider,
+    expect_outputs,
+    expected_native,
+    monkeypatch,
+):
+    calls = []
+    response = '{"message": "Done", "outputs": []}'
+
+    def fake_ask_document(**kwargs):
+        calls.append(kwargs)
+        return response if expect_outputs else "Normal response"
+
+    monkeypatch.setattr(workflow_module, "ask_document", fake_ask_document)
+
+    result = workflow_module.run_structured_workflow_documents(
+        provider=provider,
+        documents=[document()],
+        user_prompt="Olá",
+        expect_outputs=expect_outputs,
+    )
+
+    assert calls[0]["native_structured"] is expected_native
+    assert isinstance(result, StructuredResult)
+
+
+@pytest.mark.parametrize(
     "response",
     [
         "Normal textual response",
@@ -120,6 +158,29 @@ def test_consolidated_branch_forwards_strong_mode(monkeypatch):
         )
 
 
+def test_consolidated_openai_forwards_native_structured(monkeypatch):
+    calls = []
+
+    def fake_consolidated(**kwargs):
+        calls.append(kwargs)
+        return '{"message": "Done", "outputs": []}'
+
+    monkeypatch.setattr(
+        workflow_module,
+        "process_batch_consolidated",
+        fake_consolidated,
+    )
+
+    workflow_module.run_structured_workflow_documents(
+        provider="openai",
+        documents=[document("one.txt"), document("two.txt")],
+        user_prompt="Analyze",
+        expect_outputs=True,
+    )
+
+    assert calls[0]["native_structured"] is True
+
+
 def test_multiple_individual_branch_forwards_strong_mode(monkeypatch):
     monkeypatch.setattr(
         workflow_module,
@@ -135,6 +196,33 @@ def test_multiple_individual_branch_forwards_strong_mode(monkeypatch):
             mode="individual",
             expect_outputs=True,
         )
+
+
+def test_multiple_individual_openai_forwards_native_structured(monkeypatch):
+    calls = []
+
+    def fake_individual(**kwargs):
+        calls.append(kwargs)
+        return {
+            "one.txt": '{"message": "one", "outputs": []}',
+            "two.txt": '{"message": "two", "outputs": []}',
+        }
+
+    monkeypatch.setattr(
+        workflow_module,
+        "process_batch_individual",
+        fake_individual,
+    )
+
+    workflow_module.run_structured_workflow_documents(
+        provider="openai",
+        documents=[document("one.txt"), document("two.txt")],
+        user_prompt="Analyze",
+        mode="individual",
+        expect_outputs=True,
+    )
+
+    assert calls[0]["native_structured"] is True
 
 
 def test_path_loading_workflow_forwards_explicit_intention(monkeypatch):

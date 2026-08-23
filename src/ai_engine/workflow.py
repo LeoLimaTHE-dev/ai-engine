@@ -252,6 +252,7 @@ USER REQUEST:
         mode=mode,
         document_count=len(documents),
     )
+    native_structured = expect_outputs and provider.lower() == "openai"
 
     # One document can be sent directly.
     # This avoids wrapping a JSON answer inside
@@ -261,6 +262,7 @@ USER REQUEST:
             provider=provider,
             document=documents[0],
             prompt=final_prompt,
+            native_structured=native_structured,
         )
 
         return parse_structured_result(
@@ -274,6 +276,7 @@ USER REQUEST:
             provider=provider,
             documents=documents,
             prompt=final_prompt,
+            native_structured=native_structured,
         )
 
         return parse_structured_result(
@@ -288,6 +291,7 @@ USER REQUEST:
         provider=provider,
         documents=documents,
         prompt=final_prompt,
+        native_structured=native_structured,
     )
 
     messages: list[str] = []

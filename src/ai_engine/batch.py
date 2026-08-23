@@ -91,6 +91,8 @@ def process_batch_individual(
     provider: str,
     documents: list[DocumentContent],
     prompt: str,
+    *,
+    native_structured: bool = False,
 ) -> dict[str, str]:
     """
     Processes each document separately.
@@ -105,11 +107,16 @@ def process_batch_individual(
     results: dict[str, str] = {}
 
     for document in documents:
-        result = ask_document(
-            provider=provider,
-            document=document,
-            prompt=prompt,
-        )
+        call_kwargs = {
+            "provider": provider,
+            "document": document,
+            "prompt": prompt,
+        }
+
+        if native_structured:
+            call_kwargs["native_structured"] = True
+
+        result = ask_document(**call_kwargs)
 
         results[document.filename] = result
 
@@ -120,6 +127,8 @@ def process_batch_consolidated(
     provider: str,
     documents: list[DocumentContent],
     prompt: str,
+    *,
+    native_structured: bool = False,
 ) -> str:
     """
     Combines all documents and sends them
@@ -128,8 +137,13 @@ def process_batch_consolidated(
 
     combined = combine_documents(documents)
 
-    return ask_document(
-        provider=provider,
-        document=combined,
-        prompt=prompt,
-    )
+    call_kwargs = {
+        "provider": provider,
+        "document": combined,
+        "prompt": prompt,
+    }
+
+    if native_structured:
+        call_kwargs["native_structured"] = True
+
+    return ask_document(**call_kwargs)
