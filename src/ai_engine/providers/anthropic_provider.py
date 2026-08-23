@@ -25,6 +25,7 @@ from ai_engine.config import (
 )
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
+from ai_engine.provider_capabilities import get_configured_document_model
 from ai_engine.structured_schema import get_structured_result_json_schema
 from ai_engine.usage import (
     UsageRecord,
@@ -226,10 +227,8 @@ def ask_anthropic_document(
         max_retries=0,
     )
 
-    model = os.getenv(
-        "ANTHROPIC_MODEL",
-        "claude-sonnet-5",
-    )
+    model = get_configured_document_model("anthropic")
+    assert model is not None
 
     document_text = document.to_text()
 

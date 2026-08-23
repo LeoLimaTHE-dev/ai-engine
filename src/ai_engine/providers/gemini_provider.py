@@ -22,6 +22,7 @@ from google.genai._gaos.lib.compat_errors import (
 from ai_engine.config import get_provider_timeout_seconds
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
+from ai_engine.provider_capabilities import get_configured_document_model
 from ai_engine.structured_schema import get_structured_result_json_schema
 from ai_engine.usage import (
     UsageRecord,
@@ -233,10 +234,8 @@ def ask_gemini_document(
 ) -> str:
     client = genai.Client(http_options=_gemini_http_options())
 
-    model = os.getenv(
-        "GEMINI_MODEL",
-        "gemini-3.7-flash",
-    )
+    model = get_configured_document_model("gemini")
+    assert model is not None
 
     content = document.to_text()
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ai_engine.models import DocumentContent
+from ai_engine.providers.errors import ProviderRequestError
 from ai_engine.results import OutputRequest, StructuredResult
 from ai_engine.session import ConversationMessage, ConversationSession
 from ai_engine.structured_errors import OutputValidationError, StructuredParseError
@@ -12,6 +13,13 @@ from ai_engine.structured_errors import OutputValidationError, StructuredParseEr
 
 workflow_module = importlib.import_module("ai_engine.workflow")
 chat_module = importlib.import_module("ai_engine.chat")
+
+
+@pytest.fixture(autouse=True)
+def configured_supported_models(monkeypatch):
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 
 def document(name="document.txt"):
@@ -83,7 +91,7 @@ def test_strong_workflow_accepts_valid_json(monkeypatch):
         ("google", False, False),
     ],
 )
-def test_native_structured_activation_depends_only_on_supported_provider_and_flag(
+def test_native_structured_activation_depends_on_capability_and_flag(
     provider,
     expect_outputs,
     expected_native,
@@ -107,6 +115,92 @@ def test_native_structured_activation_depends_only_on_supported_provider_and_fla
 
     assert calls[0]["native_structured"] is expected_native
     assert isinstance(result, StructuredResult)
+
+
+@pytest.mark.parametrize(
+    ("provider", "environment_name"),
+    [
+        ("openai", "OPENAI_MODEL"),
+        ("anthropic", "ANTHROPIC_MODEL"),
+        ("claude", "ANTHROPIC_MODEL"),
+        ("gemini", "GEMINI_MODEL"),
+        ("google", "GEMINI_MODEL"),
+    ],
+)
+def test_unknown_model_uses_legacy_transport_and_strong_parser(
+    provider,
+    environment_name,
+    monkeypatch,
+):
+    calls = []
+
+    monkeypatch.setenv(environment_name, "future-unknown-model")
+
+    def fake_ask_document(**kwargs):
+        calls.append(kwargs)
+        return '{"message": "Legacy JSON", "outputs": []}'
+
+    monkeypatch.setattr(workflow_module, "ask_document", fake_ask_document)
+
+    result = workflow_module.run_structured_workflow_documents(
+        provider=provider,
+        documents=[document()],
+        user_prompt="Analyze",
+        expect_outputs=True,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["native_structured"] is False
+    assert result == StructuredResult(message="Legacy JSON", outputs=[])
+
+
+def test_unknown_model_invalid_json_still_raises_parse_error(monkeypatch):
+    calls = []
+    monkeypatch.setenv("OPENAI_MODEL", "future-unknown-model")
+
+    def fake_ask_document(**kwargs):
+        calls.append(kwargs)
+        return "not JSON"
+
+    monkeypatch.setattr(workflow_module, "ask_document", fake_ask_document)
+
+    with pytest.raises(StructuredParseError):
+        workflow_module.run_structured_workflow_documents(
+            provider="openai",
+            documents=[document()],
+            user_prompt="Analyze",
+            expect_outputs=True,
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["native_structured"] is False
+
+
+def test_native_provider_failure_is_not_retried_in_legacy_mode(monkeypatch):
+    calls = []
+    failure = ProviderRequestError(
+        provider="openai",
+        message="Schema rejected",
+        retryable=False,
+    )
+
+    def fake_ask_document(**kwargs):
+        calls.append(kwargs)
+        raise failure
+
+    monkeypatch.setattr(workflow_module, "ask_document", fake_ask_document)
+
+    with pytest.raises(ProviderRequestError) as captured:
+        workflow_module.run_structured_workflow_documents(
+            provider="openai",
+            documents=[document()],
+            user_prompt="Analyze",
+            expect_outputs=True,
+        )
+
+    assert captured.value is failure
+    assert len(calls) == 1
+    assert calls[0]["native_structured"] is True
 
 
 def test_anthropic_native_response_still_uses_strong_parser(monkeypatch):

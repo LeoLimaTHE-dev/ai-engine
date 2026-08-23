@@ -10,6 +10,10 @@ from .batch import (
     process_batch_individual,
 )
 from .multimodal import ask_document
+from .provider_capabilities import (
+    get_configured_document_model,
+    supports_native_structured_output,
+)
 from .prompts import load_prompt
 from .readers import read_documents
 from .results import StructuredResult
@@ -252,13 +256,11 @@ USER REQUEST:
         mode=mode,
         document_count=len(documents),
     )
-    native_structured = expect_outputs and provider.lower() in {
-        "openai",
-        "anthropic",
-        "claude",
-        "gemini",
-        "google",
-    }
+    model = get_configured_document_model(provider)
+    native_structured = expect_outputs and supports_native_structured_output(
+        provider,
+        model,
+    )
 
     # One document can be sent directly.
     # This avoids wrapping a JSON answer inside
