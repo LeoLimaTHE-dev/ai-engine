@@ -13,7 +13,7 @@ C:\IA\Iniciar IA.bat
 C:\IA\4_Prompts
 ```
 
-Snapshot versionado:
+Snapshot versionado e fonte do setup da v1.1.0:
 
 ```text
 C:\IA\api\workspace_assets
@@ -25,6 +25,8 @@ C:\IA\api\workspace_assets
 - Não altere paths de produção para apontar para esta pasta.
 - `workspace_assets` não é a pasta operacional do sistema.
 - A cópia existe somente para versionamento e reconstrução.
+- `scripts\setup_workspace.ps1` usa estes assets para instalar prompts e o
+  manual humano, além de gerar um launcher ajustado à raiz escolhida.
 - Antes de uma release, sincronize conscientemente mudanças feitas nos assets
   operacionais com este snapshot.
 - Não copie `.env`, `Key.txt`, API keys, sessões, usage, outputs, arquivos de
@@ -32,7 +34,8 @@ C:\IA\api\workspace_assets
 
 ## Restauração conceitual
 
-Em uma reconstrução futura do workspace, os arquivos podem ser copiados assim:
+Em uma reconstrução, prefira executar `scripts\setup_workspace.ps1`. Em termos
+conceituais, os arquivos são instalados assim:
 
 ```text
 workspace_assets\Iniciar IA.bat
@@ -40,7 +43,12 @@ workspace_assets\Iniciar IA.bat
 
 workspace_assets\prompts\*
 -> C:\IA\4_Prompts\
+
+workspace_assets\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx
+-> C:\IA\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx
 ```
 
-Esta seção é somente documentação. Não existe script automático de restauração
-nesta pasta.
+O launcher versionado contém placeholders e não deve ser usado diretamente. O
+setup materializa esses placeholders sem mudar os paths usados pelo engine. O
+manual usa a mesma política segura: conteúdo diferente é preservado sem
+`-Force`, e outros DOCX nunca são removidos.

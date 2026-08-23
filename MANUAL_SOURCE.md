@@ -23,9 +23,11 @@ documentos do projeto têm papéis diferentes:
 | `HANDOFF_V1.md` | Contexto para outra IA continuar o desenvolvimento. |
 | `V1_SNAPSHOT.md` | Registro histórico da v1, imutável depois da tag `v1.0.0`. |
 
-O arquivo Word `C:\IA\Guia_Ambiente_IA_Multi_Provider_Atualizado.docx` será
-gerado ou atualizado posteriormente a partir desta fonte. Esta etapa não cria
-nem modifica o DOCX.
+`MANUAL_SOURCE.md` é a fonte oficial e viva do manual. O Guia em Word é um
+documento derivado para consulta humana, distribuído em `workspace_assets` e
+instalado pelo setup em
+`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`. O DOCX deve ser atualizado
+conscientemente a partir desta fonte; esta revisão não o modifica.
 
 ## 2. Voltei depois de meses — o que faço?
 
@@ -81,13 +83,73 @@ launcher fica no workspace, fora do repositório, e não deve ser movido para
 
 ## 3. Começo rápido
 
+### 3.0 Instalação nova e reproduzível
+
+Na v1.1.0, primeiro escolha uma raiz operacional. Nos exemplos deste manual ela
+é `C:\IA`. O contrato de instalação é sempre:
+
+```text
+<Root>\api
+```
+
+O repositório deve ser clonado diretamente na subpasta `api`; o setup não move
+nem duplica um clone feito em outro lugar. Para uma instalação padrão:
+
+```powershell
+git clone https://github.com/LeoLimaTHE-dev/ai-engine.git C:\IA\api
+cd C:\IA\api
+.\scripts\setup_workspace.ps1
+```
+
+O setup:
+
+- cria a estrutura do workspace, sem apagar nem esvaziar pastas existentes;
+- copia os quatro prompts oficiais de `workspace_assets`;
+- instala o manual humano em
+  `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`;
+- gera `<Root>\Iniciar IA.bat` com os paths da instalação;
+- cria `<Root>\api\.env` a partir de `.env.example` somente se estiver ausente;
+- não lê nem substitui um `.env` existente;
+- executa `uv sync` por padrão;
+- não toca em entradas, saídas, sessões, usage ou prompts personalizados;
+- não chama providers nem valida API keys.
+
+Para instalar em outra raiz, o clone também precisa respeitar o contrato. Por
+exemplo, para `D:\IA`:
+
+```powershell
+git clone https://github.com/LeoLimaTHE-dev/ai-engine.git D:\IA\api
+cd D:\IA\api
+.\scripts\setup_workspace.ps1 -Root "D:\IA"
+```
+
+Não clone em `C:\IA\api` e passe `-Root "D:\IA"`: nessa situação o setup
+interrompe com erro e não move o repositório.
+
+Parâmetros disponíveis:
+
+| Parâmetro | Uso |
+|---|---|
+| `-Root "D:\IA"` | Declara a raiz operacional; o repo precisa estar em `D:\IA\api`. |
+| `-SkipSync` | Cria a estrutura e instala assets sem executar `uv sync`. |
+| `-Force` | Substitui somente launcher, prompts oficiais e manual oficial conflitantes. |
+
+Use `-Force` apenas depois de comparar o arquivo local com o asset oficial. A
+opção não substitui `.env`, não apaga prompts personalizados ou outros DOCX e
+não toca em dados do usuário. Consulte `SETUP_WORKSPACE.md` para o procedimento
+completo.
+
 ### 3.1 Requisitos
 
 - Windows com PowerShell;
-- Python 3.14 ou mais recente;
 - `uv` instalado;
-- ao menos uma API key válida entre OpenAI, Anthropic e Gemini;
-- acesso ao repositório em `C:\IA\api`.
+- Git para clonar o repositório;
+- rede para o clone e para `uv sync`, salvo preparação com `-SkipSync`;
+- uma API key válida para cada provider que a pessoa realmente pretenda usar.
+
+O projeto requer Python 3.14 ou mais recente. O `uv` pode localizar ou
+provisionar a versão apropriada durante o sync; não é necessário ativar uma
+`.venv` manualmente.
 
 Para preparar ou atualizar as dependências:
 
@@ -98,8 +160,9 @@ uv sync
 
 ### 3.2 Configurar o `.env`
 
-Crie ou atualize `C:\IA\api\.env` localmente. Use somente as credenciais dos
-providers desejados. Exemplo sem valores reais:
+Em uma instalação nova, o setup cria `<Root>\api\.env` a partir de
+`.env.example`. Abra o arquivo criado e preencha somente as credenciais dos
+providers que pretende usar. Exemplo sem valores reais:
 
 ```dotenv
 OPENAI_API_KEY=...
@@ -111,21 +174,24 @@ ANTHROPIC_MODEL=...
 GEMINI_MODEL=...
 ```
 
-O `.env` não deve ser commitado, enviado a outra pessoa nem copiado para
-documentos. O engine carrega esse arquivo a partir da raiz do projeto.
+Não é necessário configurar os três providers. Um provider sem credencial não
+pode ser chamado, mas os demais continuam disponíveis. O `.env` não deve ser
+commitado, enviado a outra pessoa nem copiado para documentos. O engine carrega
+esse arquivo a partir da raiz do projeto.
 
 ### 3.3 Iniciar a aplicação pelo launcher — recomendado
 
-Para uso cotidiano, abra `C:\IA` no Explorador de Arquivos e dê dois cliques
+Para uso cotidiano, abra `<Root>` no Explorador de Arquivos e dê dois cliques
 em:
 
 ```text
-C:\IA\Iniciar IA.bat
+<Root>\Iniciar IA.bat
 ```
 
 O launcher:
 
-- entra em `C:\IA\api`;
+- entra em `<Root>\api`;
+- define `IA_ROOT` como `<Root>` para o processo;
 - executa `uv run python application\ia_interativa.py`;
 - não exige ativação manual da `.venv`;
 - não abre o VS Code;
@@ -147,7 +213,24 @@ duplo clique -> menu da aplicação -> saída normal pelo menu
 
 Esse smoke não fez chamada a provider.
 
-### 3.4 Iniciar manualmente — troubleshooting e desenvolvimento
+### 3.4 Primeiro uso depois da instalação
+
+1. preencha suas próprias credenciais em `<Root>\api\.env`;
+2. abra `<Root>\Iniciar IA.bat`;
+3. escolha **Nova sessão** ou **Continuar sessão**;
+4. em uma sessão nova, escolha o provider que possui credencial configurada;
+5. escolha um template ou `[0] Nenhum — conversa normal`;
+6. indique um arquivo ou uma pasta de `<Root>\2_Entrada`;
+7. converse normalmente, confirme o preflight quando quiser realizar a
+   chamada e consulte os resultados em `<Root>\3_Saída`;
+8. digite `sair` no chat para salvar e encerrar normalmente.
+
+Nenhum é o padrão, inclusive ao pressionar Enter. Se não souber qual template
+usar, escolha Nenhum. Templates servem para instruções estáveis que se repetem
+em tarefas diferentes; eles não são necessários para liberar capacidades da
+IA.
+
+### 3.5 Iniciar manualmente — troubleshooting e desenvolvimento
 
 Se precisar diagnosticar a inicialização ou estiver desenvolvendo, use:
 
@@ -181,6 +264,11 @@ caminho não existir mais, a aplicação solicita a nova localização.
 Os arquivos gerados são gravados, por padrão, em `C:\IA\3_Saída`. A raiz
 operacional pode ser alterada com `IA_ROOT`, mas isso também muda os caminhos
 derivados de entrada, saída, prompts, dados e temporários.
+
+O launcher gerado pelo setup já define `IA_ROOT` automaticamente. No uso
+cotidiano não é necessário criar essa variável manualmente. Ela controla
+entrada, saída, prompts, dados e temporários; o repositório permanece em
+`<Root>\api`.
 
 ## 4. Uso normal da aplicação
 
@@ -510,6 +598,19 @@ C:\IA
 └── api             # repositório Git e projeto Python
 ```
 
+Em outra instalação, substitua `C:\IA` por `<Root>`. Os papéis operacionais
+permanecem os mesmos:
+
+| Caminho | Finalidade |
+|---|---|
+| `<Root>\2_Entrada` | Arquivos que serão lidos e analisados. |
+| `<Root>\3_Saída` | Resultados gerados pelo engine. |
+| `<Root>\4_Prompts` | Templates externos, oficiais ou personalizados. |
+| `<Root>\6_Dados\sessions` | Sessões locais persistidas. |
+| `<Root>\6_Dados\usage` | Registro local de uso reportado pelos providers. |
+| `<Root>\7_Temporario` | Arquivos temporários operacionais. |
+| `<Root>\api` | Clone do repositório e projeto Python. |
+
 As pastas `1_Projetos` e `5_Modelos` pertencem à organização do workspace,
 mas não se deve presumir uma integração automática com o engine. O cache
 `.pytest_cache` pode aparecer durante testes e não é uma pasta operacional do
@@ -713,7 +814,7 @@ uv run pytest -q
 Baseline verificado para esta fonte em 23/08/2026:
 
 ```text
-866 passed
+876 passed
 0 failed
 1 warning
 ```
@@ -756,6 +857,34 @@ Antes de editar código, confirme o status e leia os módulos e testes
 relacionados. Depois, rode testes focais, suíte completa, `git diff --check` e
 `git status --short`. Não faça commit antes de revisar o diff e o resultado dos
 testes.
+
+### 17.1 Atualização e reinstalação segura
+
+`scripts\setup_workspace.ps1` é idempotente e pode ser executado novamente
+depois de atualizar o repositório. Ele:
+
+- cria somente diretórios ausentes;
+- não apaga nem esvazia pastas;
+- preserva `.env` sem ler ou substituir seu conteúdo;
+- preserva prompts personalizados;
+- ignora assets oficiais idênticos;
+- preserva launcher, prompt ou manual oficial diferente e informa o conflito;
+- não toca no conteúdo de entradas, saídas, sessões ou usage.
+
+Sem `-Force`, um conflito permanece intacto. Com `-Force`, somente o launcher,
+os quatro prompts oficiais conhecidos e o manual oficial podem ser
+substituídos. Outros DOCX permanecem intocados. Compare as versões antes de
+usar essa opção. O sync pode ser repetido normalmente ou omitido com
+`-SkipSync`.
+
+### 17.2 Git, versões e releases
+
+- `v1.0.0` é o snapshot histórico congelado da primeira release;
+- `v1.1.0` adiciona a instalação reproduzível e portátil descrita neste manual;
+- `V1_SNAPSHOT.md` continua descrevendo especificamente a v1.0.0;
+- documentos vivos, como este manual e `PROJECT_STATE.md`, acompanham a versão
+  atual;
+- tags antigas não devem ser recriadas, movidas ou alteradas.
 
 ## 18. Troubleshooting
 
@@ -863,6 +992,20 @@ Nunca guarde API keys em Markdown, DOCX, scripts de exemplo, commits,
 screenshots ou mensagens de suporte. Use placeholders como
 `OPENAI_API_KEY=...` e mantenha valores reais somente no ambiente seguro.
 
+Nunca versione nem compartilhe:
+
+- `.env`;
+- `Key.txt` ou qualquer arquivo auxiliar de credenciais;
+- API keys ou tokens;
+- sessões privadas em `<Root>\6_Dados\sessions`;
+- arquivos de entrada do usuário;
+- outputs que possam conter informação sensível;
+- registros de usage quando puderem revelar informação privada.
+
+`.env.example` pode ser compartilhado porque contém somente nomes de variáveis
+e placeholders vazios. Cada pessoa deve preencher suas próprias credenciais;
+não copie secrets de outra instalação.
+
 ### 18.13 O template salvo não existe mais
 
 A aplicação mostra um aviso e continua com Nenhum. A sessão é salva novamente
@@ -876,7 +1019,11 @@ automaticamente para substituir uma intenção diferente.
 
 | Objetivo | Comando |
 |---|---|
+| Clonar instalação padrão | `git clone https://github.com/LeoLimaTHE-dev/ai-engine.git C:\IA\api` |
 | Entrar no projeto | `cd C:\IA\api` |
+| Preparar workspace | `.\scripts\setup_workspace.ps1` |
+| Preparar outra raiz | `.\scripts\setup_workspace.ps1 -Root "D:\IA"` |
+| Preparar sem sync | `.\scripts\setup_workspace.ps1 -SkipSync` |
 | Sincronizar dependências | `uv sync` |
 | Rodar testes offline | `uv run pytest -q` |
 | Iniciar a aplicação | `uv run python application\ia_interativa.py` |
@@ -913,7 +1060,7 @@ Na interface, os nomes exibidos são Gemini, OpenAI e Claude.
 | `OPENAI_MODEL` | Modelo OpenAI usado pela operação. |
 | `ANTHROPIC_MODEL` | Modelo Anthropic usado pela operação. |
 | `GEMINI_MODEL` | Modelo Gemini usado pela operação. |
-| `IA_ROOT` | Substitui a raiz operacional `C:\IA`. |
+| `IA_ROOT` | Define a raiz de entrada, saída, prompts, dados e temporários; o launcher gerado já configura essa variável. |
 | `AI_PROVIDER_TIMEOUT_SECONDS` | Timeout dos adapters. |
 | `AI_PROVIDER_MAX_RETRIES` | Retries do engine onde aplicável. |
 | `AI_PROVIDER_RETRY_BASE_DELAY_SECONDS` | Atraso-base do retry. |
@@ -968,6 +1115,7 @@ demais itens vêm da metadata dos arquivos oficiais.
 | `C:\IA\6_Dados\usage` | Registro CSV de usage. |
 | `C:\IA\7_Temporario` | Temporários operacionais. |
 | `C:\IA\api\workspace_assets` | Snapshot versionado do launcher e templates; não é operacional. |
+| `<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx` | Manual humano instalado pelo setup. |
 
 ### 19.9 Arquivos e documentos importantes
 
@@ -987,6 +1135,9 @@ demais itens vêm da metadata dos arquivos oficiais.
 | `HANDOFF_V1.md` | Continuidade para outra IA. |
 | `V1_SNAPSHOT.md` | Snapshot histórico da v1. |
 | `MANUAL_SOURCE.md` | Fonte viva deste manual humano. |
+| `SETUP_WORKSPACE.md` | Procedimento detalhado de instalação e reinstalação. |
+| `scripts\setup_workspace.ps1` | Setup idempotente do workspace. |
+| `.env.example` | Modelo sem credenciais para criar o `.env` local. |
 
 ## 20. Limitações deliberadas da v1
 

@@ -7,6 +7,30 @@ arquivos estruturados com OpenAI, Anthropic/Claude ou Gemini/Google.
 
 Requisitos: Python 3.14+ e [uv](https://docs.astral.sh/uv/).
 
+A release v1.1.0 inclui um fluxo de instalação reproduzível. Para uma
+instalação nova, clone o repositório diretamente em `<Root>\api` e execute o
+setup idempotente:
+
+```powershell
+git clone <URL_DO_REPOSITORIO> C:\IA\api
+cd C:\IA\api
+.\scripts\setup_workspace.ps1
+```
+
+Outra raiz pode ser usada quando o clone respeita o mesmo contrato, por
+exemplo `D:\IA\api`:
+
+```powershell
+.\scripts\setup_workspace.ps1 -Root "D:\IA"
+```
+
+O setup cria a árvore operacional, instala launcher, prompts e o manual humano
+a partir de `workspace_assets`, cria `.env` somente se ausente e executa
+`uv sync`. O manual fica em
+`<Root>\Guia_Ambiente_IA_Multi_Provider_v1.1.0.docx`. Consulte
+[`SETUP_WORKSPACE.md`](SETUP_WORKSPACE.md) para `-SkipSync`, `-Force` e a
+política não destrutiva.
+
 Para uso cotidiano, dê dois cliques em `C:\IA\Iniciar IA.bat`. Para executar
 manualmente ou diagnosticar a inicialização:
 
@@ -24,7 +48,8 @@ uv run --project C:\IA\api python C:\IA\0_Scripts\ia_interativa.py
 
 ## Ambiente e modelos
 
-Crie `C:\IA\api\.env` com as credenciais necessárias aos providers. Os nomes
+Use o `.env` local criado a partir de `.env.example` e preencha as credenciais
+necessárias aos providers. O setup nunca substitui um `.env` existente. Os nomes
 de modelo podem ser definidos no mesmo arquivo ou no ambiente do processo:
 
 ```dotenv

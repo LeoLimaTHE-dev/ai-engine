@@ -219,3 +219,19 @@ formatos tenham sido testados nos três providers.
 1. Executar regressão final.
 2. Cumprir o checklist manual final, sem ampliar escopo.
 3. Fazer freeze e versionamento da v1.
+
+## Portabilidade após o freeze da v1.0.0
+
+A tag `v1.0.0` permanece como snapshot congelado. A release v1.1.0 adiciona
+instalação reproduzível com o contrato `<Root>\api`:
+
+- `scripts\setup_workspace.ps1` cria a árvore operacional sem apagar dados;
+- `workspace_assets` fornece os quatro prompts oficiais e o template do
+  launcher;
+- o launcher gerado define `IA_ROOT` e aponta para o repo instalado;
+- `.env.example` contém somente nomes de configuração e placeholders;
+- `.env` existente nunca é lido ou substituído pelo setup;
+- conflitos de launcher/prompts são preservados, salvo `-Force` explícito;
+- `uv sync` é padrão, com `-SkipSync` para preparação offline.
+
+Detalhes operacionais estão em `SETUP_WORKSPACE.md`.

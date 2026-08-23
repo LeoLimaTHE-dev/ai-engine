@@ -86,6 +86,20 @@ antes de editar. Não faça commit sem revisão/autorização explícita.
 
 Requisitos: Python 3.14+ e `uv`.
 
+Após o freeze da `v1.0.0`, a release v1.1.0 passou a contar com
+`scripts\setup_workspace.ps1`, `.env.example` e `SETUP_WORKSPACE.md`. O contrato
+é `<Root>\api`; o setup é idempotente, não move o repo, não sobrescreve dados e
+usa `workspace_assets` como fonte controlada. Não atribua esse mecanismo ao
+snapshot histórico da v1.0.0.
+
+Em uma instalação nova:
+
+```powershell
+git clone <URL_DO_REPOSITORIO> C:\IA\api
+cd C:\IA\api
+.\scripts\setup_workspace.ps1
+```
+
 ```powershell
 cd C:\IA\api
 uv sync

@@ -1,5 +1,6 @@
 @echo off
-cd /d "C:\IA\api"
+set "IA_ROOT=__IA_ROOT__"
+cd /d "__REPO_DIR__"
 
 if errorlevel 1 (
     echo.
