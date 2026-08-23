@@ -235,34 +235,14 @@ def test_first_exporter_failure_is_wrapped_with_cause_and_output_index(
     monkeypatch,
     tmp_path,
 ):
-    original_error = RuntimeError("disk failed")
+    original_error = OSError("simulated exporter failure")
+    exporter_calls = []
 
-    def fail_export(*args, **kwargs):
+    def fail_first(content, output_path, title=None):
+        exporter_calls.append(output_path.name)
         raise original_error
 
-    monkeypatch.setattr(actions_module, "save_output", fail_export)
-
-    with pytest.raises(OutputExecutionError) as captured:
-        execute_structured_result(make_result(output()), tmp_path)
-
-    assert captured.value.field_path == "outputs[0]"
-    assert captured.value.__cause__ is original_error
-    assert captured.value.details == {"path": str(tmp_path / "result.txt")}
-
-
-def test_second_exporter_failure_can_leave_first_successful_file(
-    monkeypatch,
-    tmp_path,
-):
-    original_save_output = actions_module.save_output
-    original_error = RuntimeError("second failed")
-
-    def fail_second(content, output_path, title=None):
-        if output_path.name == "second.txt":
-            raise original_error
-        return original_save_output(content, output_path, title=title)
-
-    monkeypatch.setattr(actions_module, "save_output", fail_second)
+    monkeypatch.setattr(actions_module, "save_output", fail_first)
     result = make_result(
         output("txt", "first.txt", "First"),
         output("txt", "second.txt", "Second"),
@@ -271,10 +251,45 @@ def test_second_exporter_failure_can_leave_first_successful_file(
     with pytest.raises(OutputExecutionError) as captured:
         execute_structured_result(result, tmp_path)
 
+    assert captured.value.field_path == "outputs[0]"
+    assert captured.value.__cause__ is original_error
+    assert captured.value.details == {"path": str(tmp_path / "first.txt")}
+    assert exporter_calls == ["first.txt"]
+    assert not (tmp_path / "first.txt").exists()
+    assert not (tmp_path / "second.txt").exists()
+
+
+def test_second_exporter_failure_can_leave_first_successful_file(
+    monkeypatch,
+    tmp_path,
+):
+    original_save_output = actions_module.save_output
+    original_error = OSError("simulated exporter failure")
+    exporter_calls = []
+
+    def fail_second(content, output_path, title=None):
+        exporter_calls.append(output_path.name)
+        if output_path.name == "second.txt":
+            raise original_error
+        return original_save_output(content, output_path, title=title)
+
+    monkeypatch.setattr(actions_module, "save_output", fail_second)
+    result = make_result(
+        output("txt", "first.txt", "First"),
+        output("txt", "second.txt", "Second"),
+        output("txt", "third.txt", "Third"),
+    )
+
+    with pytest.raises(OutputExecutionError) as captured:
+        execute_structured_result(result, tmp_path)
+
     assert captured.value.field_path == "outputs[1]"
     assert captured.value.__cause__ is original_error
+    assert captured.value.details == {"path": str(tmp_path / "second.txt")}
+    assert exporter_calls == ["first.txt", "second.txt"]
     assert (tmp_path / "first.txt").read_text(encoding="utf-8") == "First"
     assert not (tmp_path / "second.txt").exists()
+    assert not (tmp_path / "third.txt").exists()
 
 
 def test_xlsx_invalid_and_duplicate_names_are_executed_from_plan(tmp_path):
