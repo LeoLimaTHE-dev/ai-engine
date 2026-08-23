@@ -69,6 +69,12 @@ Os formatos de saída são `txt`, `md`, `docx`, `pdf` e `xlsx`. XLSX aceita
 tabelas estruturadas. DOCX e PDF aceitam atualmente título e texto, sem
 tabelas/imagens estruturadas ou renderização Markdown avançada.
 
+Para documentos multimodais, o template externo
+`relatorio_multimodal_com_imagens` pode ser carregado de `C:\IA\4_Prompts`.
+Ele orienta referências para inserção manual: imagens externas usam o filename
+exato; imagens internas usam documento, localização e descrição inequívoca.
+A inserção física automática de imagens em DOCX/PDF permanece fora da v1.
+
 ## Testes
 
 ```powershell

@@ -112,6 +112,12 @@ primeira escrita e então chama os exporters.
 - DOCX: título e texto; sem tabelas/imagens estruturadas ou Markdown avançado.
 - PDF: título e texto; sem tabelas/imagens estruturadas ou Markdown avançado.
 
+O template externo `relatorio_multimodal_com_imagens`, disponível em
+`C:\IA\4_Prompts`, permite produzir documentos textuais com marcadores para
+inserção manual de imagens. Imagem externa é referenciada pelo filename exato;
+imagem interna é referenciada pelo documento, localização e descrição
+inequívoca. A v1 não insere imagens fisicamente em DOCX/PDF.
+
 Validation rejeita contrato e tipos inválidos. Planning resolve filename,
 extensão, destino, colisões, overwrite e nomes de sheets. Falha anterior à
 execução não inicia escrita. Uma falha real de exporter pode deixar arquivos
