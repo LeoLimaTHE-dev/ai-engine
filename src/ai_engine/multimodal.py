@@ -34,6 +34,13 @@ def ask_document(
         )
 
     if provider in ("anthropic", "claude"):
+        if native_structured:
+            return ask_anthropic_document(
+                document=document,
+                prompt=prompt,
+                native_structured=True,
+            )
+
         return ask_anthropic_document(
             document=document,
             prompt=prompt,

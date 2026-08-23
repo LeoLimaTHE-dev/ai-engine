@@ -73,13 +73,14 @@ def test_strong_workflow_accepts_valid_json(monkeypatch):
         ("openai", True, True),
         ("OPENAI", True, True),
         ("openai", False, False),
+        ("anthropic", True, True),
+        ("claude", True, True),
+        ("anthropic", False, False),
         ("gemini", True, False),
         ("google", True, False),
-        ("anthropic", True, False),
-        ("claude", True, False),
     ],
 )
-def test_native_structured_activation_depends_only_on_openai_and_explicit_flag(
+def test_native_structured_activation_depends_only_on_supported_provider_and_flag(
     provider,
     expect_outputs,
     expected_native,
@@ -103,6 +104,51 @@ def test_native_structured_activation_depends_only_on_openai_and_explicit_flag(
 
     assert calls[0]["native_structured"] is expected_native
     assert isinstance(result, StructuredResult)
+
+
+def test_anthropic_native_response_still_uses_strong_parser(monkeypatch):
+    response = json.dumps(
+        {
+            "message": "Created",
+            "outputs": [
+                {"format": "txt", "filename": "result.txt", "content": "Body"}
+            ],
+        }
+    )
+
+    def fake_ask_document(**kwargs):
+        assert kwargs["native_structured"] is True
+        return response
+
+    monkeypatch.setattr(workflow_module, "ask_document", fake_ask_document)
+
+    result = workflow_module.run_structured_workflow_documents(
+        provider="anthropic",
+        documents=[document()],
+        user_prompt="Analyze",
+        expect_outputs=True,
+    )
+
+    assert result == StructuredResult(
+        message="Created",
+        outputs=[OutputRequest(format="txt", filename="result.txt", content="Body")],
+    )
+
+
+def test_anthropic_native_invalid_json_still_raises_parse_error(monkeypatch):
+    def fake_ask_document(**kwargs):
+        assert kwargs["native_structured"] is True
+        return "not JSON"
+
+    monkeypatch.setattr(workflow_module, "ask_document", fake_ask_document)
+
+    with pytest.raises(StructuredParseError):
+        workflow_module.run_structured_workflow_documents(
+            provider="anthropic",
+            documents=[document()],
+            user_prompt="Analyze",
+            expect_outputs=True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -181,6 +227,30 @@ def test_consolidated_openai_forwards_native_structured(monkeypatch):
     assert calls[0]["native_structured"] is True
 
 
+@pytest.mark.parametrize("provider", ["anthropic", "claude"])
+def test_consolidated_anthropic_forwards_native_structured(provider, monkeypatch):
+    calls = []
+
+    def fake_consolidated(**kwargs):
+        calls.append(kwargs)
+        return '{"message": "Done", "outputs": []}'
+
+    monkeypatch.setattr(
+        workflow_module,
+        "process_batch_consolidated",
+        fake_consolidated,
+    )
+
+    workflow_module.run_structured_workflow_documents(
+        provider=provider,
+        documents=[document("one.txt"), document("two.txt")],
+        user_prompt="Analyze",
+        expect_outputs=True,
+    )
+
+    assert calls[0]["native_structured"] is True
+
+
 def test_multiple_individual_branch_forwards_strong_mode(monkeypatch):
     monkeypatch.setattr(
         workflow_module,
@@ -216,6 +286,37 @@ def test_multiple_individual_openai_forwards_native_structured(monkeypatch):
 
     workflow_module.run_structured_workflow_documents(
         provider="openai",
+        documents=[document("one.txt"), document("two.txt")],
+        user_prompt="Analyze",
+        mode="individual",
+        expect_outputs=True,
+    )
+
+    assert calls[0]["native_structured"] is True
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "claude"])
+def test_multiple_individual_anthropic_forwards_native_structured(
+    provider,
+    monkeypatch,
+):
+    calls = []
+
+    def fake_individual(**kwargs):
+        calls.append(kwargs)
+        return {
+            "one.txt": '{"message": "one", "outputs": []}',
+            "two.txt": '{"message": "two", "outputs": []}',
+        }
+
+    monkeypatch.setattr(
+        workflow_module,
+        "process_batch_individual",
+        fake_individual,
+    )
+
+    workflow_module.run_structured_workflow_documents(
+        provider=provider,
         documents=[document("one.txt"), document("two.txt")],
         user_prompt="Analyze",
         mode="individual",

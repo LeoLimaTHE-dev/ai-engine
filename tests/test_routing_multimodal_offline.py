@@ -109,7 +109,7 @@ def test_ask_document_rejects_unknown_provider():
         ("claude", "anthropic"),
     ],
 )
-def test_native_structured_is_forwarded_only_to_openai(
+def test_native_structured_is_forwarded_only_to_native_providers(
     provider,
     expected_adapter,
     monkeypatch,
@@ -119,6 +119,10 @@ def test_native_structured_is_forwarded_only_to_openai(
 
     def fake_openai(document, prompt, *, native_structured=False):
         calls.append(("openai", native_structured))
+        return "response"
+
+    def fake_anthropic(document, prompt, *, native_structured=False):
+        calls.append(("anthropic", native_structured))
         return "response"
 
     def make_other_adapter(name):
@@ -137,7 +141,7 @@ def test_native_structured_is_forwarded_only_to_openai(
     monkeypatch.setattr(
         multimodal_module,
         "ask_anthropic_document",
-        make_other_adapter("anthropic"),
+        fake_anthropic,
     )
 
     multimodal_module.ask_document(
@@ -147,7 +151,7 @@ def test_native_structured_is_forwarded_only_to_openai(
         native_structured=True,
     )
 
-    expected_flag = True if expected_adapter == "openai" else None
+    expected_flag = True if expected_adapter in {"openai", "anthropic"} else None
     assert calls == [(expected_adapter, expected_flag)]
 
 

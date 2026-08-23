@@ -136,7 +136,8 @@ def test_process_batch_consolidated_calls_once_with_combined_document(monkeypatc
     assert combined.metadata["filenames"] == ["first.docx", "second.pdf"]
 
 
-def test_batch_modes_forward_native_structured_when_enabled(monkeypatch):
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "claude"])
+def test_batch_modes_forward_native_structured_when_enabled(provider, monkeypatch):
     documents = make_documents()
     calls = []
 
@@ -147,13 +148,13 @@ def test_batch_modes_forward_native_structured_when_enabled(monkeypatch):
     monkeypatch.setattr(batch_module, "ask_document", fake_ask_document)
 
     batch_module.process_batch_individual(
-        provider="openai",
+        provider=provider,
         documents=documents,
         prompt="Analyze",
         native_structured=True,
     )
     batch_module.process_batch_consolidated(
-        provider="openai",
+        provider=provider,
         documents=documents,
         prompt="Analyze",
         native_structured=True,

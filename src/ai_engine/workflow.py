@@ -252,7 +252,11 @@ USER REQUEST:
         mode=mode,
         document_count=len(documents),
     )
-    native_structured = expect_outputs and provider.lower() == "openai"
+    native_structured = expect_outputs and provider.lower() in {
+        "openai",
+        "anthropic",
+        "claude",
+    }
 
     # One document can be sent directly.
     # This avoids wrapping a JSON answer inside
