@@ -85,6 +85,42 @@ def test_combine_documents_rejects_empty_list():
         batch_module.combine_documents([])
 
 
+def test_combine_documents_preserves_independent_image_filenames():
+    documents = [
+        DocumentContent(
+            source_path=Path("Painel CDC.jpeg"),
+            images=[
+                DocumentImage(
+                    name="Painel CDC.jpeg",
+                    data=b"first-image",
+                    media_type="image/jpeg",
+                )
+            ],
+        ),
+        DocumentContent(
+            source_path=Path("PAINEL QDE.jpg"),
+            images=[
+                DocumentImage(
+                    name="PAINEL QDE.jpg",
+                    data=b"second-image",
+                    media_type="image/jpeg",
+                )
+            ],
+        ),
+    ]
+
+    combined = batch_module.combine_documents(documents)
+
+    assert [image.name for image in combined.images] == [
+        "Painel CDC.jpeg",
+        "PAINEL QDE.jpg",
+    ]
+    assert [image.data for image in combined.images] == [
+        b"first-image",
+        b"second-image",
+    ]
+
+
 def test_process_batch_individual_calls_once_per_document(monkeypatch):
     documents = make_documents()
     calls = []

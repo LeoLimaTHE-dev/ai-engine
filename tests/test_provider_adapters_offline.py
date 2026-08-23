@@ -13,13 +13,13 @@ openai_module = importlib.import_module("ai_engine.providers.openai_provider")
 
 def make_document():
     return DocumentContent(
-        source_path=Path("document.docx"),
+        source_path=Path("Painel CDC.jpeg"),
         text="Document text",
         images=[
             DocumentImage(
-                name="source.bmp",
+                name="Painel CDC.jpeg",
                 data=b"original-image",
-                media_type="image/bmp",
+                media_type="image/jpeg",
             )
         ],
     )
@@ -104,7 +104,9 @@ def test_ask_openai_document_builds_multimodal_payload_and_logs(monkeypatch):
     assert content[0]["type"] == "input_text"
     assert "Analyze" in content[0]["text"]
     assert "DOCUMENT CONTENT:\n\nDocument text" in content[0]["text"]
-    assert content[1] == {
+    assert content[1]["type"] == "input_text"
+    assert "Painel CDC.jpeg" in content[1]["text"]
+    assert content[2] == {
         "type": "input_image",
         "image_url": "data:image/png;base64,"
         + base64.b64encode(b"normalized-image").decode("utf-8"),
@@ -188,7 +190,9 @@ def test_ask_gemini_document_builds_payload_and_skips_log_without_usage(monkeypa
     assert inputs[0]["type"] == "text"
     assert "Analyze" in inputs[0]["text"]
     assert "DOCUMENT CONTENT:\n\nDocument text" in inputs[0]["text"]
-    assert inputs[1] == {
+    assert inputs[1]["type"] == "text"
+    assert "Painel CDC.jpeg" in inputs[1]["text"]
+    assert inputs[2] == {
         "type": "image",
         "data": base64.b64encode(b"normalized-image").decode("utf-8"),
         "mime_type": "image/png",
@@ -268,7 +272,9 @@ def test_ask_anthropic_document_builds_multimodal_payload_and_joins_text(monkeyp
     assert calls[0]["model"] == "claude-document-test"
     assert calls[0]["max_tokens"] == 2048
     content = calls[0]["messages"][0]["content"]
-    assert content[0] == {
+    assert content[0]["type"] == "text"
+    assert "Painel CDC.jpeg" in content[0]["text"]
+    assert content[1] == {
         "type": "image",
         "source": {
             "type": "base64",
@@ -276,9 +282,9 @@ def test_ask_anthropic_document_builds_multimodal_payload_and_joins_text(monkeyp
             "data": base64.b64encode(b"normalized-image").decode("utf-8"),
         },
     }
-    assert content[1]["type"] == "text"
-    assert "Analyze" in content[1]["text"]
-    assert "DOCUMENT CONTENT:\n\nDocument text" in content[1]["text"]
+    assert content[2]["type"] == "text"
+    assert "Analyze" in content[2]["text"]
+    assert "DOCUMENT CONTENT:\n\nDocument text" in content[2]["text"]
     assert logs == [
         UsageRecord(
             provider="anthropic",

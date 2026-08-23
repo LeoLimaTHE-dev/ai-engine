@@ -256,6 +256,7 @@ DOCUMENT CONTENT:
     ]
 
     for image in document.images:
+        image_name = image.name
         image = normalize_image(image)
 
         if not image.media_type:
@@ -265,6 +266,12 @@ DOCUMENT CONTENT:
 
         data_url = f"data:{image.media_type};base64,{encoded_image}"
 
+        content.append(
+            {
+                "type": "input_text",
+                "text": f"Image filename: {image_name}",
+            }
+        )
         content.append(
             {
                 "type": "input_image",

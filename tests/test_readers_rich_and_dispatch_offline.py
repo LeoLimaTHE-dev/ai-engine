@@ -89,6 +89,46 @@ def test_read_image_preserves_file_bytes_and_metadata(tmp_path):
     }
 
 
+def test_read_external_image_preserves_original_filename_exactly(tmp_path):
+    path = tmp_path / "Painel CDC.jpeg"
+    Image.new("RGB", (3, 2), color=(10, 20, 30)).save(path, format="JPEG")
+
+    document = read_image(path)
+
+    assert document.images[0].name == "Painel CDC.jpeg"
+    assert document.filename == "Painel CDC.jpeg"
+
+
+def test_read_docx_keeps_embedded_image_as_internal_name(tmp_path):
+    image_path = tmp_path / "source.png"
+    Image.new("RGB", (3, 2), color=(10, 20, 30)).save(image_path)
+    docx_path = tmp_path / "report.docx"
+    source = Document()
+    source.add_picture(str(image_path))
+    source.save(docx_path)
+
+    document = read_docx(docx_path)
+
+    assert document.filename == "report.docx"
+    assert len(document.images) == 1
+    assert document.images[0].name.startswith("image")
+    assert document.images[0].name.endswith(".png")
+    assert document.images[0].name != image_path.name
+
+
+def test_read_pdf_keeps_rendered_page_as_internal_name(tmp_path):
+    path = tmp_path / "scan.pdf"
+    source = pymupdf.open()
+    source.new_page()
+    source.save(path)
+    source.close()
+
+    document = read_pdf(path)
+
+    assert document.filename == "scan.pdf"
+    assert [image.name for image in document.images] == ["page_1_render.png"]
+
+
 @pytest.mark.parametrize(
     ("reader", "filename"),
     [

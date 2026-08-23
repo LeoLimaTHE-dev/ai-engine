@@ -244,6 +244,7 @@ DOCUMENT CONTENT:
 
     # Images first
     for image in document.images:
+        image_name = image.name
         image = normalize_image(image)
 
         if not image.media_type:
@@ -251,6 +252,12 @@ DOCUMENT CONTENT:
 
         encoded_image = base64.b64encode(image.data).decode("utf-8")
 
+        content.append(
+            {
+                "type": "text",
+                "text": f"Image filename: {image_name}",
+            }
+        )
         content.append(
             {
                 "type": "image",

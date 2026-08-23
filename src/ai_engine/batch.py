@@ -64,9 +64,14 @@ def combine_documents(
             document.images,
             start=1,
         ):
+            image_name = image.name
+
+            if image.name != document.filename:
+                image_name = f"{document.source_path.stem}_{image_index}_{image.name}"
+
             images.append(
                 DocumentImage(
-                    name=(f"{document.source_path.stem}_{image_index}_{image.name}"),
+                    name=image_name,
                     data=image.data,
                     media_type=image.media_type,
                 )
