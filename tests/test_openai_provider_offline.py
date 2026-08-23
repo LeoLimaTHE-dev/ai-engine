@@ -24,6 +24,161 @@ from ai_engine.providers.errors import (
     ProviderRequestError,
     ProviderTimeoutError,
 )
+from ai_engine.structured_schema import get_structured_result_json_schema
+from ai_engine.usage import UsageRecord
+
+
+def successful_response(*, output_text="Expected response", usage=None, **values):
+    return SimpleNamespace(output_text=output_text, usage=usage, **values)
+
+
+def arrange_payload_capture(monkeypatch, response=None):
+    calls = []
+    client_options = []
+    response = response or successful_response()
+    client = SimpleNamespace(
+        responses=SimpleNamespace(
+            create=lambda **kwargs: calls.append(kwargs) or response,
+        )
+    )
+
+    def make_client(**kwargs):
+        client_options.append(kwargs)
+        return client
+
+    monkeypatch.setattr(openai_provider, "OpenAI", make_client)
+    return calls, client_options
+
+
+def make_document():
+    return DocumentContent(
+        source_path=Path("example.txt"),
+        text="Document content",
+    )
+
+
+def test_native_structured_text_adds_canonical_strict_schema(monkeypatch):
+    calls, _ = arrange_payload_capture(monkeypatch)
+    canonical_before = get_structured_result_json_schema()
+
+    result = openai_provider.ask_openai("Hello", native_structured=True)
+
+    assert result == "Expected response"
+    assert calls[0]["input"] == "Hello"
+    assert calls[0]["text"] == {
+        "format": {
+            "type": "json_schema",
+            "name": "structured_result",
+            "schema": canonical_before,
+            "strict": True,
+        }
+    }
+    assert get_structured_result_json_schema() == canonical_before
+
+
+def test_native_structured_document_preserves_multimodal_input(monkeypatch):
+    default_calls, _ = arrange_payload_capture(monkeypatch)
+    openai_provider.ask_openai_document(make_document(), "Analyze")
+    default_input = default_calls[0]["input"]
+
+    native_calls, _ = arrange_payload_capture(monkeypatch)
+    result = openai_provider.ask_openai_document(
+        make_document(),
+        "Analyze",
+        native_structured=True,
+    )
+
+    assert result == "Expected response"
+    assert native_calls[0]["input"] == default_input
+    assert native_calls[0]["text"]["format"]["schema"] == (
+        get_structured_result_json_schema()
+    )
+
+
+@pytest.mark.parametrize("operation", ["text", "document"])
+def test_native_structured_preserves_usage_timeout_and_native_retry_settings(
+    operation,
+    monkeypatch,
+):
+    usage = SimpleNamespace(input_tokens=10, output_tokens=4, total_tokens=14)
+    calls, client_options = arrange_payload_capture(
+        monkeypatch,
+        successful_response(usage=usage),
+    )
+    logs = []
+    monkeypatch.setattr(openai_provider, "log_usage", logs.append)
+    monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("OPENAI_MODEL", "openai-test")
+
+    if operation == "text":
+        result = openai_provider.ask_openai("Hello", native_structured=True)
+    else:
+        result = openai_provider.ask_openai_document(
+            make_document(),
+            "Analyze",
+            native_structured=True,
+        )
+
+    assert result == "Expected response"
+    assert len(calls) == 1
+    assert client_options == [{"timeout": 2.5, "max_retries": 0}]
+    assert logs == [
+        UsageRecord(
+            provider="openai",
+            model="openai-test",
+            input_tokens=10,
+            output_tokens=4,
+            total_tokens=14,
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("response", "error_code", "message"),
+    [
+        (
+            successful_response(status="failed", error={"code": "failure"}),
+            "response_failed",
+            "was failed",
+        ),
+        (
+            successful_response(
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+            ),
+            "response_incomplete",
+            "was incomplete",
+        ),
+        (
+            successful_response(
+                status="completed",
+                output=[
+                    SimpleNamespace(
+                        content=[
+                            SimpleNamespace(type="refusal", refusal="Cannot comply")
+                        ]
+                    )
+                ],
+            ),
+            "response_refusal",
+            "Cannot comply",
+        ),
+    ],
+    ids=["failed", "incomplete", "refusal"],
+)
+def test_native_structured_rejects_non_result_response_states(
+    response,
+    error_code,
+    message,
+    monkeypatch,
+):
+    arrange_payload_capture(monkeypatch, response)
+
+    with pytest.raises(ProviderRequestError, match=message) as captured:
+        openai_provider.ask_openai("Hello", native_structured=True)
+
+    assert captured.value.error_code == error_code
+    assert captured.value.retryable is False
 
 
 def test_ask_openai_document_returns_output_text_without_usage(monkeypatch):
@@ -273,3 +428,28 @@ def test_log_usage_error_is_not_normalized_as_provider_error(monkeypatch):
         openai_provider.ask_openai("Hello")
 
     assert not isinstance(captured.value, ProviderError)
+
+
+def test_native_structured_sdk_errors_keep_existing_normalization(monkeypatch):
+    sdk_error = make_status_error(BadRequestError, 400)
+
+    def raise_error(**kwargs):
+        assert kwargs["text"]["format"]["type"] == "json_schema"
+        raise sdk_error
+
+    client = SimpleNamespace(responses=SimpleNamespace(create=raise_error))
+    monkeypatch.setattr(openai_provider, "OpenAI", lambda **kwargs: client)
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "0")
+
+    with pytest.raises(ProviderRequestError) as captured:
+        openai_provider.ask_openai("Hello", native_structured=True)
+
+    assert captured.value.__cause__ is sdk_error
+
+
+def test_other_providers_do_not_import_structured_schema():
+    providers_dir = Path(openai_provider.__file__).parent
+
+    for filename in ("gemini_provider.py", "anthropic_provider.py"):
+        source = providers_dir.joinpath(filename).read_text(encoding="utf-8")
+        assert "structured_schema" not in source

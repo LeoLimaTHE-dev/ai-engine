@@ -24,6 +24,7 @@ from ai_engine.config import (
 )
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
+from ai_engine.structured_schema import get_structured_result_json_schema
 from ai_engine.usage import (
     UsageRecord,
     log_usage,
@@ -41,6 +42,8 @@ from .retry import retry_provider_call
 
 
 ResultT = TypeVar("ResultT")
+
+_STRUCTURED_RESULT_SCHEMA_NAME = "structured_result"
 
 
 def _openai_error_metadata(exc: OpenAIError) -> dict[str, object]:
@@ -139,7 +142,51 @@ def _call_openai(operation: Callable[[], ResultT]) -> ResultT:
     )
 
 
-def ask_openai(prompt: str) -> str:
+def _structured_text_config() -> dict[str, object]:
+    return {
+        "format": {
+            "type": "json_schema",
+            "name": _STRUCTURED_RESULT_SCHEMA_NAME,
+            "schema": get_structured_result_json_schema(),
+            "strict": True,
+        }
+    }
+
+
+def _value(item: object, name: str) -> object | None:
+    if isinstance(item, dict):
+        return item.get(name)
+
+    return getattr(item, name, None)
+
+
+def _ensure_native_structured_response(response: object) -> None:
+    status = _value(response, "status")
+
+    if status in {"failed", "incomplete"}:
+        details_name = "error" if status == "failed" else "incomplete_details"
+        raise ProviderRequestError(
+            provider="openai",
+            message=f"OpenAI structured response was {status}.",
+            error_code=f"response_{status}",
+            retryable=False,
+            details=_value(response, details_name),
+        )
+
+    for output_item in _value(response, "output") or []:
+        for content_item in _value(output_item, "content") or []:
+            if _value(content_item, "type") == "refusal":
+                refusal = _value(content_item, "refusal")
+                raise ProviderRequestError(
+                    provider="openai",
+                    message=str(refusal or "OpenAI refused the structured response."),
+                    error_code="response_refusal",
+                    retryable=False,
+                    details=refusal,
+                )
+
+
+def ask_openai(prompt: str, *, native_structured: bool = False) -> str:
     client = OpenAI(
         timeout=get_provider_timeout_seconds(),
         max_retries=0,
@@ -147,12 +194,15 @@ def ask_openai(prompt: str) -> str:
 
     model = os.getenv("OPENAI_MODEL", "gpt-5")
 
-    response = _call_openai(
-        lambda: client.responses.create(
-            model=model,
-            input=prompt,
-        )
-    )
+    request = {
+        "model": model,
+        "input": prompt,
+    }
+
+    if native_structured:
+        request["text"] = _structured_text_config()
+
+    response = _call_openai(lambda: client.responses.create(**request))
 
     usage = response.usage
 
@@ -167,12 +217,17 @@ def ask_openai(prompt: str) -> str:
             )
         )
 
+    if native_structured:
+        _ensure_native_structured_response(response)
+
     return response.output_text
 
 
 def ask_openai_document(
     document: DocumentContent,
     prompt: str,
+    *,
+    native_structured: bool = False,
 ) -> str:
     client = OpenAI(
         timeout=get_provider_timeout_seconds(),
@@ -218,17 +273,20 @@ DOCUMENT CONTENT:
             }
         )
 
-    response = _call_openai(
-        lambda: client.responses.create(
-            model=model,
-            input=[
-                {
-                    "role": "user",
-                    "content": content,
-                }
-            ],
-        )
-    )
+    request = {
+        "model": model,
+        "input": [
+            {
+                "role": "user",
+                "content": content,
+            }
+        ],
+    }
+
+    if native_structured:
+        request["text"] = _structured_text_config()
+
+    response = _call_openai(lambda: client.responses.create(**request))
     usage = response.usage
 
     if usage is not None:
@@ -241,5 +299,8 @@ DOCUMENT CONTENT:
                 total_tokens=(usage.total_tokens or 0),
             )
         )
+
+    if native_structured:
+        _ensure_native_structured_response(response)
 
     return response.output_text

@@ -193,10 +193,11 @@ def test_schema_contract_matches_actions_prompt(schema, output_schema, table_sch
     )
 
 
-def test_providers_do_not_import_or_reference_structured_schema():
+def test_gemini_and_anthropic_do_not_import_or_reference_structured_schema():
     providers_dir = Path(__file__).resolve().parents[1] / "src" / "ai_engine" / "providers"
 
-    for provider_path in providers_dir.glob("*_provider.py"):
+    for provider_name in ("gemini_provider.py", "anthropic_provider.py"):
+        provider_path = providers_dir / provider_name
         source = provider_path.read_text(encoding="utf-8")
         ast.parse(source)
         assert "structured_schema" not in source
