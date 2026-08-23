@@ -15,6 +15,13 @@ def ask_document(
     provider = provider.lower()
 
     if provider in ("gemini", "google"):
+        if native_structured:
+            return ask_gemini_document(
+                document=document,
+                prompt=prompt,
+                native_structured=True,
+            )
+
         return ask_gemini_document(
             document=document,
             prompt=prompt,

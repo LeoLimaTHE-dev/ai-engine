@@ -125,18 +125,15 @@ def test_native_structured_is_forwarded_only_to_native_providers(
         calls.append(("anthropic", native_structured))
         return "response"
 
-    def make_other_adapter(name):
-        def adapter(document, prompt):
-            calls.append((name, None))
-            return "response"
-
-        return adapter
+    def fake_gemini(document, prompt, *, native_structured=False):
+        calls.append(("gemini", native_structured))
+        return "response"
 
     monkeypatch.setattr(multimodal_module, "ask_openai_document", fake_openai)
     monkeypatch.setattr(
         multimodal_module,
         "ask_gemini_document",
-        make_other_adapter("gemini"),
+        fake_gemini,
     )
     monkeypatch.setattr(
         multimodal_module,
@@ -151,8 +148,7 @@ def test_native_structured_is_forwarded_only_to_native_providers(
         native_structured=True,
     )
 
-    expected_flag = True if expected_adapter in {"openai", "anthropic"} else None
-    assert calls == [(expected_adapter, expected_flag)]
+    assert calls == [(expected_adapter, True)]
 
 
 def test_load_environment_uses_project_env_file(monkeypatch):

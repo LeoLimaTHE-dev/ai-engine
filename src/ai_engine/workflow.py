@@ -256,6 +256,8 @@ USER REQUEST:
         "openai",
         "anthropic",
         "claude",
+        "gemini",
+        "google",
     }
 
     # One document can be sent directly.

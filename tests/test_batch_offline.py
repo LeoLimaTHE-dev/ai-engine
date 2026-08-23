@@ -136,7 +136,10 @@ def test_process_batch_consolidated_calls_once_with_combined_document(monkeypatc
     assert combined.metadata["filenames"] == ["first.docx", "second.pdf"]
 
 
-@pytest.mark.parametrize("provider", ["openai", "anthropic", "claude"])
+@pytest.mark.parametrize(
+    "provider",
+    ["openai", "anthropic", "claude", "gemini", "google"],
+)
 def test_batch_modes_forward_native_structured_when_enabled(provider, monkeypatch):
     documents = make_documents()
     calls = []
