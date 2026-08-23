@@ -17,7 +17,7 @@ from anthropic import (
     RequestTooLargeError,
 )
 
-from ai_engine.models import DocumentContent
+from ai_engine.models import DocumentContent, DocumentImage
 from ai_engine.providers import anthropic_provider
 from ai_engine.providers.errors import (
     ProviderConnectionError,
@@ -26,6 +26,170 @@ from ai_engine.providers.errors import (
     ProviderRequestError,
     ProviderTimeoutError,
 )
+from ai_engine.structured_schema import get_structured_result_json_schema
+from ai_engine.usage import UsageRecord
+
+
+def successful_message(*, stop_reason="end_turn"):
+    return SimpleNamespace(
+        content=[
+            SimpleNamespace(type="text", text='{"message":"Done","outputs":[]}')
+        ],
+        usage=SimpleNamespace(input_tokens=10, output_tokens=4),
+        stop_reason=stop_reason,
+    )
+
+
+def arrange_payload_capture(monkeypatch, message=None):
+    calls = []
+    client_options = []
+    message = message or successful_message()
+    client = SimpleNamespace(
+        messages=SimpleNamespace(
+            create=lambda **kwargs: calls.append(kwargs) or message,
+        )
+    )
+
+    def make_client(**kwargs):
+        client_options.append(kwargs)
+        return client
+
+    monkeypatch.setattr(anthropic_provider, "Anthropic", make_client)
+    return calls, client_options
+
+
+def document_with_image():
+    return DocumentContent(
+        source_path=Path("document.txt"),
+        text="Document content",
+        images=[
+            DocumentImage(
+                name="image.png",
+                data=b"image-data",
+                media_type="image/png",
+            )
+        ],
+    )
+
+
+def test_native_structured_text_adds_canonical_output_config_and_returns_str(
+    monkeypatch,
+):
+    calls, _ = arrange_payload_capture(monkeypatch)
+    logs = []
+    canonical_before = get_structured_result_json_schema()
+    monkeypatch.setattr(anthropic_provider, "log_usage", logs.append)
+    monkeypatch.setenv("ANTHROPIC_MODEL", "anthropic-test")
+
+    result = anthropic_provider.ask_anthropic("Hello", native_structured=True)
+
+    assert result == '{"message":"Done","outputs":[]}'
+    assert isinstance(result, str)
+    assert calls[0]["output_config"] == {
+        "format": {
+            "type": "json_schema",
+            "schema": canonical_before,
+        }
+    }
+    assert get_structured_result_json_schema() == canonical_before
+    assert logs == [
+        UsageRecord(
+            provider="anthropic",
+            model="anthropic-test",
+            input_tokens=10,
+            output_tokens=4,
+            total_tokens=14,
+        )
+    ]
+
+
+def test_default_text_payload_does_not_include_output_config(monkeypatch):
+    calls, _ = arrange_payload_capture(monkeypatch)
+    monkeypatch.setattr(anthropic_provider, "log_usage", lambda record: None)
+
+    anthropic_provider.ask_anthropic("Hello")
+
+    assert "output_config" not in calls[0]
+
+
+def test_native_structured_document_preserves_multimodal_payload(monkeypatch):
+    document = document_with_image()
+    monkeypatch.setattr(anthropic_provider, "log_usage", lambda record: None)
+    monkeypatch.setattr(anthropic_provider, "normalize_image", lambda image: image)
+
+    default_calls, _ = arrange_payload_capture(monkeypatch)
+    anthropic_provider.ask_anthropic_document(document, "Analyze")
+    default_messages = default_calls[0]["messages"]
+
+    native_message = successful_message()
+    native_message.content.append(SimpleNamespace(type="text", text="second"))
+    native_calls, _ = arrange_payload_capture(monkeypatch, native_message)
+    result = anthropic_provider.ask_anthropic_document(
+        document,
+        "Analyze",
+        native_structured=True,
+    )
+
+    assert native_calls[0]["messages"] == default_messages
+    assert native_calls[0]["output_config"]["format"]["schema"] == (
+        get_structured_result_json_schema()
+    )
+    assert result == '{"message":"Done","outputs":[]}\nsecond'
+
+
+def test_native_structured_preserves_timeout_and_retry_configuration(monkeypatch):
+    calls, client_options = arrange_payload_capture(monkeypatch)
+    retry_options = []
+
+    def fake_retry(operation, **kwargs):
+        retry_options.append(kwargs)
+        return operation()
+
+    monkeypatch.setattr(anthropic_provider, "retry_provider_call", fake_retry)
+    monkeypatch.setattr(anthropic_provider, "log_usage", lambda record: None)
+    monkeypatch.setenv("AI_PROVIDER_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "3")
+    monkeypatch.setenv("AI_PROVIDER_RETRY_BASE_DELAY_SECONDS", "0.25")
+    monkeypatch.setenv("AI_PROVIDER_RETRY_MAX_DELAY_SECONDS", "4")
+
+    anthropic_provider.ask_anthropic("Hello", native_structured=True)
+
+    assert len(calls) == 1
+    assert client_options == [{"timeout": 2.5, "max_retries": 0}]
+    assert retry_options == [
+        {
+            "max_retries": 3,
+            "base_delay_seconds": 0.25,
+            "max_delay_seconds": 4.0,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "stop_reason",
+    [
+        "refusal",
+        "max_tokens",
+        "model_context_window_exceeded",
+        "pause_turn",
+        "tool_use",
+        "stop_sequence",
+    ],
+)
+def test_native_structured_rejects_incompatible_stop_reasons(
+    stop_reason,
+    monkeypatch,
+):
+    arrange_payload_capture(monkeypatch, successful_message(stop_reason=stop_reason))
+    logs = []
+    monkeypatch.setattr(anthropic_provider, "log_usage", logs.append)
+
+    with pytest.raises(ProviderRequestError, match=stop_reason) as captured:
+        anthropic_provider.ask_anthropic("Hello", native_structured=True)
+
+    assert captured.value.error_code == f"stop_reason_{stop_reason}"
+    assert captured.value.retryable is False
+    assert len(logs) == 1
 
 
 def make_status_error(
@@ -253,3 +417,20 @@ def test_log_usage_error_is_not_normalized_as_provider_error(monkeypatch):
         anthropic_provider.ask_anthropic("Hello")
 
     assert not isinstance(captured.value, ProviderError)
+
+
+def test_native_structured_sdk_errors_keep_existing_normalization(monkeypatch):
+    sdk_error = make_status_error(BadRequestError, 400)
+
+    def raise_error(**kwargs):
+        assert kwargs["output_config"]["format"]["type"] == "json_schema"
+        raise sdk_error
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=raise_error))
+    monkeypatch.setattr(anthropic_provider, "Anthropic", lambda **kwargs: client)
+    monkeypatch.setenv("AI_PROVIDER_MAX_RETRIES", "0")
+
+    with pytest.raises(ProviderRequestError) as captured:
+        anthropic_provider.ask_anthropic("Hello", native_structured=True)
+
+    assert captured.value.__cause__ is sdk_error

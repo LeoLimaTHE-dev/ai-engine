@@ -193,11 +193,18 @@ def test_schema_contract_matches_actions_prompt(schema, output_schema, table_sch
     )
 
 
-def test_gemini_and_anthropic_do_not_import_or_reference_structured_schema():
+def test_openai_and_anthropic_use_schema_while_gemini_remains_isolated():
     providers_dir = Path(__file__).resolve().parents[1] / "src" / "ai_engine" / "providers"
 
-    for provider_name in ("gemini_provider.py", "anthropic_provider.py"):
+    for provider_name in ("openai_provider.py", "anthropic_provider.py"):
         provider_path = providers_dir / provider_name
         source = provider_path.read_text(encoding="utf-8")
         ast.parse(source)
-        assert "structured_schema" not in source
+        assert "structured_schema" in source
+        assert "get_structured_result_json_schema" in source
+
+    gemini_source = providers_dir.joinpath("gemini_provider.py").read_text(
+        encoding="utf-8"
+    )
+    ast.parse(gemini_source)
+    assert "structured_schema" not in gemini_source

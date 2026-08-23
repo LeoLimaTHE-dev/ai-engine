@@ -25,6 +25,7 @@ from ai_engine.config import (
 )
 from ai_engine.images import normalize_image
 from ai_engine.models import DocumentContent
+from ai_engine.structured_schema import get_structured_result_json_schema
 from ai_engine.usage import (
     UsageRecord,
     log_usage,
@@ -145,7 +146,32 @@ def _call_anthropic(operation: Callable[[], ResultT]) -> ResultT:
     )
 
 
-def ask_anthropic(prompt: str) -> str:
+def _structured_output_config() -> dict[str, object]:
+    return {
+        "format": {
+            "type": "json_schema",
+            "schema": get_structured_result_json_schema(),
+        }
+    }
+
+
+def _ensure_native_structured_message(message: object) -> None:
+    stop_reason = getattr(message, "stop_reason", None)
+
+    if stop_reason is not None and stop_reason != "end_turn":
+        raise ProviderRequestError(
+            provider="anthropic",
+            message=(
+                "Anthropic structured response stopped with "
+                f"reason {stop_reason!r}."
+            ),
+            error_code=f"stop_reason_{stop_reason}",
+            retryable=False,
+            details={"stop_reason": stop_reason},
+        )
+
+
+def ask_anthropic(prompt: str, *, native_structured: bool = False) -> str:
     client = Anthropic(
         timeout=get_provider_timeout_seconds(),
         max_retries=0,
@@ -153,18 +179,21 @@ def ask_anthropic(prompt: str) -> str:
 
     model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 
-    message = _call_anthropic(
-        lambda: client.messages.create(
-            model=model,
-            max_tokens=1024,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-        )
-    )
+    request = {
+        "model": model,
+        "max_tokens": 1024,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    }
+
+    if native_structured:
+        request["output_config"] = _structured_output_config()
+
+    message = _call_anthropic(lambda: client.messages.create(**request))
 
     input_tokens = message.usage.input_tokens or 0
 
@@ -180,12 +209,17 @@ def ask_anthropic(prompt: str) -> str:
         )
     )
 
+    if native_structured:
+        _ensure_native_structured_message(message)
+
     return message.content[0].text
 
 
 def ask_anthropic_document(
     document: DocumentContent,
     prompt: str,
+    *,
+    native_structured: bool = False,
 ) -> str:
     client = Anthropic(
         timeout=get_provider_timeout_seconds(),
@@ -237,18 +271,21 @@ DOCUMENT CONTENT:
         }
     )
 
-    message = _call_anthropic(
-        lambda: client.messages.create(
-            model=model,
-            max_tokens=2048,
-            messages=[
-                {
-                    "role": "user",
-                    "content": content,
-                }
-            ],
-        )
-    )
+    request = {
+        "model": model,
+        "max_tokens": 2048,
+        "messages": [
+            {
+                "role": "user",
+                "content": content,
+            }
+        ],
+    }
+
+    if native_structured:
+        request["output_config"] = _structured_output_config()
+
+    message = _call_anthropic(lambda: client.messages.create(**request))
 
     input_tokens = message.usage.input_tokens or 0
 
@@ -263,6 +300,9 @@ DOCUMENT CONTENT:
             total_tokens=(input_tokens + output_tokens),
         )
     )
+
+    if native_structured:
+        _ensure_native_structured_message(message)
 
     text_parts = []
 

@@ -447,9 +447,8 @@ def test_native_structured_sdk_errors_keep_existing_normalization(monkeypatch):
     assert captured.value.__cause__ is sdk_error
 
 
-def test_other_providers_do_not_import_structured_schema():
+def test_gemini_does_not_import_structured_schema():
     providers_dir = Path(openai_provider.__file__).parent
 
-    for filename in ("gemini_provider.py", "anthropic_provider.py"):
-        source = providers_dir.joinpath(filename).read_text(encoding="utf-8")
-        assert "structured_schema" not in source
+    source = providers_dir.joinpath("gemini_provider.py").read_text(encoding="utf-8")
+    assert "structured_schema" not in source
