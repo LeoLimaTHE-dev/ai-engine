@@ -229,7 +229,7 @@ def test_legacy_mode_still_exposes_type_error_for_null_table_collection(field):
         parse_structured_result(raw_response)
 
 
-def test_only_workflow_and_chat_control_expect_outputs():
+def test_only_application_workflow_and_chat_control_expect_outputs():
     project_root = Path(__file__).resolve().parents[1]
     source_paths = [
         *project_root.joinpath("src", "ai_engine").rglob("*.py"),
@@ -250,4 +250,4 @@ def test_only_workflow_and_chat_control_expect_outputs():
                 if keyword.arg == "expect_outputs":
                     consumers.add(source_path.name)
 
-    assert consumers == {"chat.py", "workflow.py"}
+    assert consumers == {"ia_interativa.py", "chat.py", "workflow.py"}

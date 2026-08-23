@@ -25,6 +25,11 @@ from ai_engine import (
     summarize_session,
     usage_difference,
 )
+from ai_engine.structured_errors import (
+    OutputExecutionError,
+    OutputValidationError,
+    StructuredParseError,
+)
 
 PATHS = get_paths()
 
@@ -114,6 +119,49 @@ def confirm_preflight_interactively(
         "y",
         "yes",
     )
+
+
+def ask_expect_outputs() -> bool:
+    choice = input("Espera arquivos nesta resposta? [s/N]: ").strip().lower()
+
+    return choice in (
+        "s",
+        "sim",
+        "y",
+        "yes",
+    )
+
+
+def format_structured_error_for_user(exc: Exception) -> str:
+    if isinstance(exc, StructuredParseError):
+        return "\n".join(
+            (
+                "A resposta da IA não veio no formato estruturado esperado.",
+                "Nenhum arquivo foi criado.",
+                f"Detalhe: {exc.message}",
+            )
+        )
+
+    if isinstance(exc, OutputValidationError):
+        lines = [
+            "A resposta foi entendida, mas contém dados inválidos "
+            "para geração de arquivos."
+        ]
+        if exc.field_path:
+            lines.append(f"Campo problemático: {exc.field_path}")
+        lines.append(f"Detalhe: {exc.message}")
+        return "\n".join(lines)
+
+    if isinstance(exc, OutputExecutionError):
+        lines = [
+            "O plano era válido, mas houve falha durante a escrita de um arquivo."
+        ]
+        if exc.field_path:
+            lines.append(f"Output que falhou: {exc.field_path}")
+        lines.append(f"Detalhe: {exc.message}")
+        return "\n".join(lines)
+
+    return str(exc)
 
 
 # ============================================================
@@ -673,6 +721,8 @@ def run_chat(
 
             continue
 
+        expect_outputs = ask_expect_outputs()
+
         # ====================================================
         # MEMORY COMPACTION
         # ====================================================
@@ -803,7 +853,25 @@ def run_chat(
             result = chat(
                 session=session,
                 user_message=user_message,
+                expect_outputs=expect_outputs,
             )
+
+        except (StructuredParseError, OutputValidationError) as exc:
+            print()
+            print("=" * 60)
+            print("ERRO NA RESPOSTA ESTRUTURADA")
+            print("=" * 60)
+
+            print()
+            print(format_structured_error_for_user(exc))
+
+            print()
+            print("Sua mensagem NÃO foi adicionada ao histórico.")
+
+            print()
+            print("A sessão continua aberta.")
+
+            continue
 
         except ProviderError as exc:
             print()
@@ -878,6 +946,10 @@ def run_chat(
                     result=result,
                     output_dir=(DEFAULT_OUTPUT_DIR),
                 )
+
+            except OutputExecutionError as exc:
+                print()
+                print(format_structured_error_for_user(exc))
 
             except Exception as exc:
                 print()

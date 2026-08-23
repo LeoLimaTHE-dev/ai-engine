@@ -97,7 +97,7 @@ def test_choose_input_still_allows_user_override(monkeypatch, tmp_path):
     assert module.choose_input() == chosen_path
 
 
-def test_interface_imports_engine_symbols_only_from_public_api():
+def test_interface_uses_public_api_except_internal_structured_error_contract():
     tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
     engine_imports = [
         node
@@ -129,7 +129,9 @@ def test_interface_imports_engine_symbols_only_from_public_api():
 
     assert len(engine_imports) == 1
     assert isinstance(engine_imports[0], ast.ImportFrom)
-    assert internal_imports == []
+    assert [node.module for node in internal_imports] == [
+        "ai_engine.structured_errors"
+    ]
 
 
 def make_preflight_report(errors=None):
